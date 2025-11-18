@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Options - Vault Password Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; max-width: 720px; }
+    label { display:block; margin-top:12px; font-weight: 500; }
+    input[type="text"], input[type="password"], input[type="number"] { width:100%; padding:8px; box-sizing:border-box; border: 1px solid #ddd; border-radius: 4px; }
+    button { margin-top:12px; padding:8px 12px; cursor: pointer; border: 1px solid #ddd; border-radius: 4px; background: #3b82f6; color: white; }
+    button:hover { background: #2563eb; }
+    button.secondary { background: #6b7280; }
+    button.secondary:hover { background: #4b5563; }
+    .note { margin-top:8px; color: #444; font-size:0.9em; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+    .modal-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; border-radius: 8px; min-width: 300px; }
+    .modal.show { display: block; }
+    .pin-input { text-align: center; font-size: 24px; letter-spacing: 8px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h2>Configuration Vault</h2>
+  <label>URL du Vault</label>
+  <input id="vaultUrl" type="text" placeholder="https://vault.exem.fr/" value="https://vault.exem.fr/" />
+  <label>Token Vault</label>
+  <input id="vaultToken" type="password" placeholder="s.xxxxxx" />
+  <label>Mount path KV</label>
+  <input id="kvMount" type="text" placeholder="passwords" value="passwords"/>
+  <button id="saveBtn">Enregistrer et authentifier</button>
+  <button id="clearBtn" class="secondary">Réinitialiser</button>
+  <p class="note">
+    Le token sera chiffré avec une clé d'authentification rapide (4 chiffres) que vous devrez créer.
+  </p>
+  
+  <!-- Modal pour créer la clé d'authentification rapide -->
+  <div id="pinModal" class="modal">
+    <div class="modal-content">
+      <h3>Créer une clé d'authentification rapide</h3>
+      <p>Entrez un code à 4 chiffres pour sécuriser votre token Vault.</p>
+      <input id="pinInput" type="number" class="pin-input" placeholder="0000" maxlength="4" min="0" max="9999" />
+      <input id="pinConfirm" type="number" class="pin-input" placeholder="Confirmer" maxlength="4" min="0" max="9999" style="margin-top: 12px;" />
+      <div style="margin-top: 16px; display: flex; gap: 8px;">
+        <button id="pinSaveBtn" style="flex: 1;">Enregistrer</button>
+        <button id="pinCancelBtn" class="secondary" style="flex: 1;">Annuler</button>
+      </div>
+      <p id="pinError" style="color: red; font-size: 0.9em; margin-top: 8px; display: none;"></p>
+    </div>
+  </div>
+  
+  <script src="crypto-utils.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
+

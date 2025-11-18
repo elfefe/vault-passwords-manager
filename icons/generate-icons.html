@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Générateur d'icônes - Vault Password Manager</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    canvas {
+      border: 1px solid #ddd;
+      margin: 10px;
+      display: block;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      background: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #1565c0;
+    }
+    .icon-container {
+      display: inline-block;
+      margin: 10px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Générateur d'icônes pour Vault Password Manager</h1>
+  <p>Cliquez sur les boutons pour télécharger les icônes aux différentes tailles.</p>
+  
+  <div class="icon-container">
+    <canvas id="icon16" width="16" height="16"></canvas>
+    <br>
+    <button onclick="downloadIcon('icon16', 'icon16.png')">Télécharger 16x16</button>
+  </div>
+  
+  <div class="icon-container">
+    <canvas id="icon48" width="48" height="48"></canvas>
+    <br>
+    <button onclick="downloadIcon('icon48', 'icon48.png')">Télécharger 48x48</button>
+  </div>
+  
+  <div class="icon-container">
+    <canvas id="icon128" width="128" height="128"></canvas>
+    <br>
+    <button onclick="downloadIcon('icon128', 'icon128.png')">Télécharger 128x128</button>
+  </div>
+  
+  <div style="margin-top: 20px;">
+    <button onclick="generateAll()">Générer toutes les icônes</button>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      
+      // Fond bleu
+      ctx.fillStyle = '#1976d2';
+      ctx.fillRect(0, 0, size, size);
+      
+      // Cercle blanc pour le cadenas
+      const centerX = size / 2;
+      const centerY = size / 2;
+      const radius = size * 0.25;
+      
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Rectangle pour le corps du cadenas
+      const lockWidth = size * 0.3;
+      const lockHeight = size * 0.25;
+      const lockX = centerX - lockWidth / 2;
+      const lockY = centerY + radius * 0.3;
+      
+      ctx.fillStyle = '#1976d2';
+      ctx.fillRect(lockX, lockY, lockWidth, lockHeight);
+      
+      // Arc pour la partie supérieure du cadenas
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = size * 0.08;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY - radius * 0.2, radius * 0.6, Math.PI, 0, false);
+      ctx.stroke();
+    }
+    
+    function downloadIcon(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+    
+    function generateAll() {
+      drawIcon(document.getElementById('icon16'), 16);
+      drawIcon(document.getElementById('icon48'), 48);
+      drawIcon(document.getElementById('icon128'), 128);
+    }
+    
+    // Générer les icônes au chargement
+    window.onload = generateAll;
+  </script>
+</body>
+</html>
+
