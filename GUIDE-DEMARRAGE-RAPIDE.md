@@ -76,6 +76,40 @@
 1. Cliquez sur l'icône 📋 en haut à droite du tableau
 2. Tous les champs sont copiés au format `clé: valeur`
 
+## ⚠️ IMPORTANT : Synchronisation et Backup
+
+**Dès maintenant**, protégez votre Master Key avec l'une de ces deux méthodes :
+
+### Option 1 : Synchronisation Chrome ☁️ (RECOMMANDÉ)
+
+**La plus simple pour un usage multi-appareils !**
+
+1. **Options** → Section "☁️ Synchronisation Chrome"
+2. **Cochez** "Activer la synchronisation Chrome"
+3. **Entrez votre PIN**
+4. ✅ **Votre Master Key est synchronisée automatiquement !**
+
+**Avantages :**
+- ✅ Automatique entre tous vos PC Chrome
+- ✅ Récupération instantanée sur nouveau PC
+- ✅ Aucune configuration à refaire
+
+📖 Guide complet : [GUIDE-SYNC-CHROME.md](GUIDE-SYNC-CHROME.md)
+
+### Option 2 : Backup Manuel 📁
+
+**Pour sécurité ultime !**
+
+1. **Options** → Section "🔐 Gestion de la Master Key"
+2. **Cliquez** "📥 Télécharger Master Key"
+3. **Stockez le fichier** dans un endroit sûr
+
+📖 Guide complet : [GUIDE-BACKUP-MASTERKEY.md](GUIDE-BACKUP-MASTERKEY.md)
+
+💡 **Conseil** : Activez la **Sync Chrome** ET faites un **backup manuel** pour double protection !
+
+---
+
 ## Fonctionnalités Avancées 🎯
 
 ### Gestion des Catégories
@@ -213,6 +247,8 @@ Après chiffrement : {"iv":"...","ciphertext":"...","tag":"..."}
 
 ## 🎓 Ressources Supplémentaires
 
+- **Guide sync Chrome** : [GUIDE-SYNC-CHROME.md](GUIDE-SYNC-CHROME.md) ⭐ **NOUVEAU**
+- **Guide backup manuel** : [GUIDE-BACKUP-MASTERKEY.md](GUIDE-BACKUP-MASTERKEY.md) ⭐ **IMPORTANT**
 - **Documentation technique** : [CRYPTO-SYSTEM.md](CRYPTO-SYSTEM.md)
 - **Tests interactifs** : Ouvrez `test-crypto-system.html` dans Chrome
 - **Changelog** : [CHANGELOG.md](CHANGELOG.md)

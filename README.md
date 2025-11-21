@@ -23,6 +23,8 @@ Extension Chrome (Manifest V3) pour gérer les mots de passe dans HashiCorp Vaul
 - ✅ Masquage/affichage des mots de passe
 - ✅ Détection automatique des champs de type password
 - ✅ Gestion de catégories de secrets
+- ✅ **Export/Import de la Master Key** : Backup et restauration en un clic
+- ✅ **Synchronisation Chrome Automatique** : Master Key synchronisée entre tous vos appareils
 
 ## Installation
 
@@ -171,6 +173,61 @@ Tests disponibles :
 - ✅ Chiffrement/déchiffrement
 - ✅ Vérification d'authenticité
 - ✅ Tests de performance
+
+## 💾 Backup et Synchronisation de la Master Key
+
+**IMPORTANT** : La Master Key est essentielle pour déchiffrer vos secrets. Si vous la perdez, vos secrets seront **irrécupérables**.
+
+### ☁️ Synchronisation Chrome Automatique (RECOMMANDÉ)
+
+La méthode la plus simple pour utiliser l'extension sur plusieurs ordinateurs !
+
+**Activation :**
+1. Ouvrez **Options** → Section "☁️ Synchronisation Chrome"
+2. Cochez **"Activer la synchronisation Chrome"**
+3. Entrez votre PIN
+4. ✅ **Votre Master Key est maintenant synchronisée !**
+
+**Sur un nouvel ordinateur :**
+1. Installez Chrome + connectez-vous avec votre compte Google
+2. Installez l'extension
+3. Ouvrez l'extension → Entrez votre PIN
+4. ✅ **Tous vos secrets sont automatiquement disponibles !**
+
+**Avantages :**
+- ✅ Synchronisation automatique instantanée
+- ✅ Disponible sur tous vos appareils Chrome
+- ✅ Aucune configuration supplémentaire
+- ✅ Master Key toujours chiffrée (PIN requis)
+
+📖 **Guide complet** : [GUIDE-SYNC-CHROME.md](GUIDE-SYNC-CHROME.md)
+
+### 📁 Export/Import Manuel (Backup de Sécurité)
+
+**Export :**
+1. Ouvrez **Options** → Section "🔐 Gestion de la Master Key"
+2. Cliquez sur **"📥 Télécharger Master Key"**
+3. Entrez votre PIN
+4. Le fichier `vault-master-key-{timestamp}.txt` est téléchargé
+
+**Import :**
+1. Ouvrez **Options**
+2. Cliquez sur **"📤 Importer Master Key"**
+3. Sélectionnez votre fichier de backup
+4. Entrez votre PIN
+
+⚠️ **Sécurité** : Le fichier exporté contient la Master Key en clair. Stockez-le dans un endroit sûr :
+- Gestionnaire de mots de passe (KeePass, 1Password, etc.)
+- Clé USB chiffrée
+- Coffre-fort physique
+
+📖 **Documentation complète** : [GUIDE-BACKUP-MASTERKEY.md](GUIDE-BACKUP-MASTERKEY.md)
+
+### 💡 Recommandation
+
+Pour une sécurité maximale, utilisez **les deux méthodes** :
+- ☁️ **Sync Chrome** pour un usage quotidien multi-appareils
+- 📁 **Backup manuel** une fois par mois pour une sécurité ultime
 
 ## 🔄 Migration des Secrets Existants
 

@@ -9,7 +9,23 @@ const pinConfirm = document.getElementById('pinConfirm');
 const pinSaveBtn = document.getElementById('pinSaveBtn');
 const pinCancelBtn = document.getElementById('pinCancelBtn');
 const pinError = document.getElementById('pinError');
+const exportMasterKeyBtn = document.getElementById('exportMasterKeyBtn');
+const importMasterKeyBtn = document.getElementById('importMasterKeyBtn');
+const importMasterKeyFile = document.getElementById('importMasterKeyFile');
+const masterKeyStatus = document.getElementById('masterKeyStatus');
+const pinPromptModal = document.getElementById('pinPromptModal');
+const pinPromptInput = document.getElementById('pinPromptInput');
+const pinPromptOkBtn = document.getElementById('pinPromptOkBtn');
+const pinPromptCancelBtn = document.getElementById('pinPromptCancelBtn');
+const pinPromptError = document.getElementById('pinPromptError');
+const pinPromptTitle = document.getElementById('pinPromptTitle');
+const pinPromptMessage = document.getElementById('pinPromptMessage');
+const syncEnabledCheckbox = document.getElementById('syncEnabledCheckbox');
+const syncStatus = document.getElementById('syncStatus');
 const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.googleusercontent.com";
+
+// Variables pour le modal PIN prompt
+let pinPromptResolve = null;
 
 // Limiter les inputs PIN à 4 chiffres
 pinInput.addEventListener('input', (e) => {
@@ -655,3 +671,365 @@ clearBtn.addEventListener('click', () => {
 });
 
 loadSettings();
+
+// ============================================================
+// GESTION DE LA MASTER KEY (EXPORT/IMPORT)
+// ============================================================
+
+// Afficher le statut de la Master Key
+async function updateMasterKeyStatus() {
+  const hasMK = await window.cryptoSystem.hasMasterKey();
+  if (hasMK) {
+    masterKeyStatus.innerHTML = '✅ <strong>Master Key présente</strong> - Vous pouvez l\'exporter pour backup';
+    masterKeyStatus.style.color = '#059669';
+  } else {
+    masterKeyStatus.innerHTML = '⚠️ <strong>Aucune Master Key</strong> - Créez-en une ou importez-en une';
+    masterKeyStatus.style.color = '#d97706';
+  }
+}
+
+// Appeler au chargement
+updateMasterKeyStatus();
+
+// ============================================================
+// SYNCHRONISATION CHROME
+// ============================================================
+
+// Mettre à jour le statut de synchronisation
+async function updateSyncStatus() {
+  try {
+    const syncInfo = await window.cryptoSystem.getSyncInfo();
+    
+    if (syncInfo.enabled && syncInfo.hasSyncedKey) {
+      const syncDate = syncInfo.syncDate ? new Date(syncInfo.syncDate).toLocaleString() : 'inconnue';
+      syncStatus.innerHTML = `✅ <strong>Synchronisation active</strong> - Dernière sync: ${syncDate}`;
+      syncStatus.style.color = '#059669';
+      syncEnabledCheckbox.checked = true;
+    } else if (syncInfo.hasSyncedKey && !syncInfo.enabled) {
+      syncStatus.innerHTML = '⚠️ <strong>Master Key trouvée dans le cloud</strong> mais synchronisation désactivée';
+      syncStatus.style.color = '#d97706';
+      syncEnabledCheckbox.checked = false;
+    } else {
+      syncStatus.innerHTML = '⚪ <strong>Synchronisation désactivée</strong> - La Master Key est uniquement en local';
+      syncStatus.style.color = '#6b7280';
+      syncEnabledCheckbox.checked = false;
+    }
+  } catch (error) {
+    console.error('Erreur lors de la vérification du statut sync:', error);
+    syncStatus.innerHTML = '❌ Erreur lors de la vérification du statut';
+    syncStatus.style.color = '#dc2626';
+  }
+}
+
+// Appeler au chargement
+updateSyncStatus();
+
+// Gérer le changement de la checkbox
+syncEnabledCheckbox.addEventListener('change', async () => {
+  const shouldEnable = syncEnabledCheckbox.checked;
+  
+  try {
+    // Vérifier si une Master Key existe
+    const hasMK = await window.cryptoSystem.hasMasterKey();
+    if (!hasMK) {
+      alert('❌ Aucune Master Key à synchroniser. Créez-en une d\'abord en configurant l\'extension.');
+      syncEnabledCheckbox.checked = false;
+      return;
+    }
+    
+    if (shouldEnable) {
+      // Activer la synchronisation
+      syncStatus.innerHTML = '⏳ Activation de la synchronisation...';
+      syncStatus.style.color = '#3b82f6';
+      
+      // Demander le PIN
+      const pin = await promptForPin(
+        '🔐 Activation de la Synchronisation',
+        'Entrez votre PIN pour synchroniser la Master Key'
+      );
+      
+      if (!pin) {
+        syncEnabledCheckbox.checked = false;
+        await updateSyncStatus();
+        return;
+      }
+      
+      // Activer la sync
+      await window.cryptoSystem.setSyncEnabled(true, pin);
+      
+      syncStatus.innerHTML = '✅ <strong>Synchronisation activée avec succès !</strong>';
+      syncStatus.style.color = '#059669';
+      
+      setTimeout(() => {
+        alert('✅ Synchronisation activée !\n\n' +
+          'Votre Master Key est maintenant synchronisée avec votre compte Google Chrome.\n\n' +
+          '🔄 Elle sera automatiquement disponible sur tous vos appareils Chrome connectés au même compte.');
+      }, 100);
+      
+    } else {
+      // Désactiver la synchronisation
+      const confirm1 = confirm(
+        '⚠️ Désactiver la synchronisation ?\n\n' +
+        'La Master Key sera supprimée de la synchronisation Chrome mais restera disponible en local sur cet appareil.\n\n' +
+        'Les autres appareils ne recevront plus les mises à jour.\n\n' +
+        'Continuer ?'
+      );
+      
+      if (!confirm1) {
+        syncEnabledCheckbox.checked = true;
+        return;
+      }
+      
+      syncStatus.innerHTML = '⏳ Désactivation de la synchronisation...';
+      syncStatus.style.color = '#3b82f6';
+      
+      // Demander le PIN
+      const pin = await promptForPin(
+        '🔐 Désactivation de la Synchronisation',
+        'Entrez votre PIN pour confirmer'
+      );
+      
+      if (!pin) {
+        syncEnabledCheckbox.checked = true;
+        await updateSyncStatus();
+        return;
+      }
+      
+      // Désactiver la sync
+      await window.cryptoSystem.setSyncEnabled(false, pin);
+      
+      syncStatus.innerHTML = '⚪ <strong>Synchronisation désactivée</strong>';
+      syncStatus.style.color = '#6b7280';
+      
+      alert('✅ Synchronisation désactivée.\n\n' +
+        'La Master Key reste disponible en local sur cet appareil.');
+    }
+    
+    // Mettre à jour les statuts
+    await updateSyncStatus();
+    await updateMasterKeyStatus();
+    
+  } catch (error) {
+    console.error('Erreur lors du changement de synchronisation:', error);
+    syncStatus.innerHTML = `❌ Erreur: ${error.message}`;
+    syncStatus.style.color = '#dc2626';
+    alert('❌ Erreur: ' + error.message);
+    
+    // Remettre la checkbox dans son état précédent
+    syncEnabledCheckbox.checked = !shouldEnable;
+  }
+});
+
+// Fonction pour demander le PIN via un modal
+function promptForPin(title, message) {
+  return new Promise((resolve) => {
+    pinPromptTitle.textContent = title;
+    pinPromptMessage.textContent = message;
+    pinPromptInput.value = '';
+    pinPromptError.style.display = 'none';
+    pinPromptModal.classList.add('show');
+    pinPromptInput.focus();
+    
+    pinPromptResolve = resolve;
+  });
+}
+
+// Gestionnaires du modal PIN prompt
+pinPromptInput.addEventListener('input', (e) => {
+  e.target.value = e.target.value.slice(0, 4);
+});
+
+pinPromptOkBtn.addEventListener('click', async () => {
+  const pin = pinPromptInput.value;
+  
+  if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+    pinPromptError.textContent = 'Le code doit contenir exactement 4 chiffres';
+    pinPromptError.style.display = 'block';
+    return;
+  }
+  
+  // Vérifier le PIN
+  try {
+    const stored = await new Promise((resolve) => {
+      chrome.storage.local.get(['pinHash'], resolve);
+    });
+    
+    if (!stored.pinHash) {
+      pinPromptError.textContent = 'Aucun PIN configuré';
+      pinPromptError.style.display = 'block';
+      return;
+    }
+    
+    const pinHash = await window.cryptoUtils.sha256(pin);
+    if (pinHash !== stored.pinHash) {
+      pinPromptError.textContent = 'Code incorrect';
+      pinPromptError.style.display = 'block';
+      return;
+    }
+    
+    // PIN correct
+    pinPromptModal.classList.remove('show');
+    if (pinPromptResolve) {
+      pinPromptResolve(pin);
+      pinPromptResolve = null;
+    }
+  } catch (error) {
+    pinPromptError.textContent = 'Erreur: ' + error.message;
+    pinPromptError.style.display = 'block';
+  }
+});
+
+pinPromptCancelBtn.addEventListener('click', () => {
+  pinPromptModal.classList.remove('show');
+  if (pinPromptResolve) {
+    pinPromptResolve(null);
+    pinPromptResolve = null;
+  }
+});
+
+// Export Master Key
+exportMasterKeyBtn.addEventListener('click', async () => {
+  try {
+    // Vérifier si une Master Key existe
+    const hasMK = await window.cryptoSystem.hasMasterKey();
+    if (!hasMK) {
+      alert('Aucune Master Key à exporter. Créez-en une d\'abord en configurant l\'extension.');
+      return;
+    }
+    
+    // Demander le PIN
+    const pin = await promptForPin(
+      '🔐 Export de la Master Key',
+      'Entrez votre PIN pour déverrouiller la Master Key'
+    );
+    
+    if (!pin) {
+      return; // Annulé
+    }
+    
+    // Charger la Master Key
+    const masterKey = await window.cryptoSystem.loadMasterKey(pin);
+    
+    // Convertir en hexadécimal
+    const masterKeyHex = Array.from(masterKey)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    // Créer le contenu du fichier avec métadonnées
+    const exportData = {
+      version: '1.1',
+      type: 'vault-password-manager-master-key',
+      exportDate: new Date().toISOString(),
+      masterKey: masterKeyHex,
+      warning: 'HAUTEMENT CONFIDENTIEL - Ne partagez jamais ce fichier'
+    };
+    
+    const fileContent = JSON.stringify(exportData, null, 2);
+    
+    // Télécharger le fichier
+    const blob = new Blob([fileContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vault-master-key-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert('✅ Master Key exportée avec succès!\n\n⚠️ IMPORTANT : Stockez ce fichier dans un endroit sûr et ne le partagez jamais.');
+    
+  } catch (error) {
+    console.error('Erreur lors de l\'export:', error);
+    alert('❌ Erreur lors de l\'export: ' + error.message);
+  }
+});
+
+// Import Master Key
+importMasterKeyBtn.addEventListener('click', () => {
+  importMasterKeyFile.click();
+});
+
+importMasterKeyFile.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  try {
+    // Lire le fichier
+    const fileContent = await file.text();
+    let importData;
+    
+    try {
+      importData = JSON.parse(fileContent);
+    } catch {
+      alert('❌ Format de fichier invalide. Le fichier doit être au format JSON.');
+      return;
+    }
+    
+    // Vérifier le format
+    if (!importData.masterKey || importData.type !== 'vault-password-manager-master-key') {
+      alert('❌ Ce fichier ne contient pas une Master Key valide.');
+      return;
+    }
+    
+    // Confirmation
+    const confirmMsg = `⚠️ ATTENTION ⚠️\n\nVous êtes sur le point d'importer une Master Key.\n\n` +
+      `Cela va :\n` +
+      `• Remplacer votre Master Key actuelle (si elle existe)\n` +
+      `• Vous permettre de déchiffrer les secrets créés avec cette Master Key\n` +
+      `• Rendre inaccessibles les secrets créés avec l'ancienne Master Key\n\n` +
+      `Fichier exporté le : ${new Date(importData.exportDate).toLocaleString()}\n\n` +
+      `Êtes-vous sûr de vouloir continuer ?`;
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    // Demander le PIN
+    const pin = await promptForPin(
+      '🔐 Import de la Master Key',
+      'Entrez votre PIN pour chiffrer la nouvelle Master Key'
+    );
+    
+    if (!pin) {
+      return; // Annulé
+    }
+    
+    // Convertir hex en Uint8Array
+    const masterKeyHex = importData.masterKey;
+    const masterKey = new Uint8Array(
+      masterKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+    );
+    
+    if (masterKey.length !== 32) {
+      alert('❌ Taille de Master Key invalide. Elle doit faire 32 bytes (256 bits).');
+      return;
+    }
+    
+    // Convertir en hex pour le stockage
+    const masterKeyHexForStorage = Array.from(masterKey)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    // Chiffrer la master key avec le PIN
+    const encryptedMasterKey = await window.cryptoUtils.encrypt(masterKeyHexForStorage, pin);
+    
+    // Stocker dans chrome.storage.local
+    await new Promise((resolve) => {
+      chrome.storage.local.set({ encryptedMasterKey }, resolve);
+    });
+    
+    alert('✅ Master Key importée avec succès!\n\nVous pouvez maintenant déchiffrer les secrets créés avec cette Master Key.');
+    
+    // Mettre à jour le statut
+    await updateMasterKeyStatus();
+    
+    // Réinitialiser l'input file
+    importMasterKeyFile.value = '';
+    
+  } catch (error) {
+    console.error('Erreur lors de l\'import:', error);
+    alert('❌ Erreur lors de l\'import: ' + error.message);
+    importMasterKeyFile.value = '';
+  }
+});

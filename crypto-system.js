@@ -15,11 +15,12 @@ function generateMasterKey(length = 32) {
 }
 
 /**
- * Stocke la master key dans chrome.storage.local, chiffrée par le PIN
+ * Stocke la master key dans chrome.storage (local + sync), chiffrée par le PIN
  * @param {Uint8Array} masterKey - la master key à stocker
  * @param {string} pin - le PIN à 4 chiffres pour chiffrer la master key
+ * @param {boolean} enableSync - si true, synchronise aussi dans chrome.storage.sync
  */
-async function storeMasterKey(masterKey, pin) {
+async function storeMasterKey(masterKey, pin, enableSync = true) {
   // Convertir la master key en hex pour le stockage
   const masterKeyHex = Array.from(masterKey)
     .map(b => b.toString(16).padStart(2, '0'))
@@ -29,21 +30,60 @@ async function storeMasterKey(masterKey, pin) {
   const encryptedMasterKey = await window.cryptoUtils.encrypt(masterKeyHex, pin);
   
   // Stocker dans chrome.storage.local
-  return new Promise((resolve) => {
+  await new Promise((resolve) => {
     chrome.storage.local.set({ encryptedMasterKey }, resolve);
   });
+  
+  // Si la sync est activée, stocker aussi dans chrome.storage.sync
+  if (enableSync) {
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.storage.sync.set({ 
+          encryptedMasterKey,
+          masterKeySyncEnabled: true,
+          masterKeySyncDate: new Date().toISOString()
+        }, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      });
+      console.log('Master Key synchronisée avec chrome.storage.sync');
+    } catch (error) {
+      console.warn('Impossible de synchroniser la Master Key:', error);
+      // Ne pas échouer si la sync échoue, la Master Key est déjà en local
+    }
+  }
 }
 
 /**
- * Charge la master key depuis chrome.storage.local
+ * Charge la master key depuis chrome.storage (local ou sync)
  * @param {string} pin - le PIN à 4 chiffres pour déchiffrer la master key
  * @returns {Promise<Uint8Array>}
  */
 async function loadMasterKey(pin) {
-  // Récupérer depuis chrome.storage.local
-  const stored = await new Promise((resolve) => {
+  // Essayer d'abord chrome.storage.local
+  let stored = await new Promise((resolve) => {
     chrome.storage.local.get(['encryptedMasterKey'], resolve);
   });
+  
+  // Si pas en local, essayer chrome.storage.sync
+  if (!stored.encryptedMasterKey) {
+    console.log('Master Key absente en local, recherche dans sync...');
+    stored = await new Promise((resolve) => {
+      chrome.storage.sync.get(['encryptedMasterKey'], resolve);
+    });
+    
+    // Si trouvée dans sync, la copier en local pour accès rapide
+    if (stored.encryptedMasterKey) {
+      console.log('Master Key trouvée dans sync, copie en local...');
+      await new Promise((resolve) => {
+        chrome.storage.local.set({ encryptedMasterKey: stored.encryptedMasterKey }, resolve);
+      });
+    }
+  }
   
   if (!stored.encryptedMasterKey) {
     throw new Error('Master key not initialized!');
@@ -61,14 +101,72 @@ async function loadMasterKey(pin) {
 }
 
 /**
- * Vérifie si une master key existe déjà
+ * Vérifie si une master key existe déjà (local ou sync)
  * @returns {Promise<boolean>}
  */
 async function hasMasterKey() {
-  const stored = await new Promise((resolve) => {
+  // Vérifier d'abord en local
+  let stored = await new Promise((resolve) => {
     chrome.storage.local.get(['encryptedMasterKey'], resolve);
   });
+  
+  if (stored.encryptedMasterKey) {
+    return true;
+  }
+  
+  // Sinon vérifier dans sync
+  stored = await new Promise((resolve) => {
+    chrome.storage.sync.get(['encryptedMasterKey'], resolve);
+  });
+  
   return !!stored.encryptedMasterKey;
+}
+
+/**
+ * Vérifie si la synchronisation est activée
+ * @returns {Promise<boolean>}
+ */
+async function isSyncEnabled() {
+  const stored = await new Promise((resolve) => {
+    chrome.storage.sync.get(['masterKeySyncEnabled'], resolve);
+  });
+  return !!stored.masterKeySyncEnabled;
+}
+
+/**
+ * Active ou désactive la synchronisation de la Master Key
+ * @param {boolean} enabled - true pour activer, false pour désactiver
+ * @param {string} pin - le PIN pour accéder à la Master Key
+ */
+async function setSyncEnabled(enabled, pin) {
+  if (enabled) {
+    // Activer la sync : copier la Master Key en sync
+    const masterKey = await loadMasterKey(pin);
+    await storeMasterKey(masterKey, pin, true);
+    console.log('Synchronisation activée');
+  } else {
+    // Désactiver la sync : supprimer de sync mais garder en local
+    await new Promise((resolve) => {
+      chrome.storage.sync.remove(['encryptedMasterKey', 'masterKeySyncEnabled', 'masterKeySyncDate'], resolve);
+    });
+    console.log('Synchronisation désactivée');
+  }
+}
+
+/**
+ * Récupère les informations de synchronisation
+ * @returns {Promise<Object>}
+ */
+async function getSyncInfo() {
+  const stored = await new Promise((resolve) => {
+    chrome.storage.sync.get(['masterKeySyncEnabled', 'masterKeySyncDate', 'encryptedMasterKey'], resolve);
+  });
+  
+  return {
+    enabled: !!stored.masterKeySyncEnabled,
+    syncDate: stored.masterKeySyncDate || null,
+    hasSyncedKey: !!stored.encryptedMasterKey
+  };
 }
 
 // --------------------------------------------------------------
@@ -221,7 +319,13 @@ if (typeof window !== 'undefined') {
     initializeCryptoSystem,
     hasMasterKey,
     loadMasterKey,
+    storeMasterKey,
     changePinAndReencryptMasterKey,
+    
+    // Synchronisation Chrome
+    isSyncEnabled,
+    setSyncEnabled,
+    getSyncInfo,
     
     // Chiffrement/déchiffrement de secrets
     encryptSecret,

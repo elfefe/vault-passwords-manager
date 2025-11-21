@@ -1,5 +1,194 @@
 # 📝 Changelog - Vault Password Manager
 
+## Version 1.1.2 - Novembre 2024 ☁️
+
+### 🎉 Nouvelle Fonctionnalité Majeure
+
+#### Synchronisation Chrome Automatique
+
+- **Synchronisation automatique** : Master Key synchronisée entre tous vos appareils Chrome
+  - Utilise `chrome.storage.sync` (API native Chrome)
+  - Synchronisation instantanée via votre compte Google
+  - Aucune configuration supplémentaire requise
+  - Master Key toujours chiffrée par votre PIN
+
+- **Interface dans Options** :
+  - Nouvelle section "☁️ Synchronisation Chrome Automatique"
+  - Checkbox pour activer/désactiver la sync
+  - Statut en temps réel avec date de dernière synchronisation
+  - Explications et avantages affichés
+
+- **Détection automatique** :
+  - Sur un nouvel appareil, la Master Key est automatiquement récupérée depuis le cloud
+  - Fallback sur `chrome.storage.local` si sync non disponible
+  - Copie automatique de sync vers local pour accès rapide
+
+### 🔧 Modifications
+
+#### `crypto-system.js`
+- Fonction `storeMasterKey()` : Paramètre `enableSync` pour activer la synchronisation
+- Fonction `loadMasterKey()` : Recherche d'abord en local, puis dans sync
+- Fonction `hasMasterKey()` : Vérifie local ET sync
+- Nouvelles fonctions :
+  - `isSyncEnabled()` : Vérifie si la sync est active
+  - `setSyncEnabled()` : Active/désactive la sync
+  - `getSyncInfo()` : Récupère les infos de synchronisation
+
+#### `options.html`
+- Nouvelle section "☁️ Synchronisation Chrome Automatique"
+- Checkbox avec label explicatif
+- Zone d'information avec avantages
+- Statut de synchronisation en temps réel
+
+#### `options.js`
+- Fonction `updateSyncStatus()` : Affiche le statut de sync
+- Event listener sur la checkbox de sync
+- Demande de PIN pour activer/désactiver
+- Confirmations pour désactivation
+- Messages d'alerte informatifs
+
+### 📦 Nouveaux Fichiers
+
+- `GUIDE-SYNC-CHROME.md` : Guide complet de 400+ lignes
+  - Comparaison avec backup manuel
+  - Cas d'usage détaillés
+  - Sécurité et modèle de menace
+  - Résolution de problèmes
+  - FAQ complète
+
+### 🔒 Sécurité
+
+**Architecture de synchronisation :**
+
+```
+PIN (local à chaque appareil)
+    ↓
+Master Key (chiffrée avec le PIN)
+    ↓
+chrome.storage.sync (chiffré par Google)
+    ↓
+Tous vos appareils Chrome (même compte Google)
+```
+
+**Protections :**
+- ✅ Master Key toujours chiffrée par le PIN
+- ✅ Transmission sécurisée (TLS)
+- ✅ Authentification Google requise
+- ✅ PIN ne se synchronise PAS (reste local)
+
+### ✨ Avantages
+
+| Avant (1.1.1) | Maintenant (1.1.2) |
+|---------------|---------------------|
+| Backup manuel requis | Synchronisation automatique |
+| Export/Import fichier .txt | Transparent et instantané |
+| Configuration sur chaque PC | Configuration une seule fois |
+| Partage difficile entre PC | Disponible partout automatiquement |
+
+### 🎯 Cas d'Usage
+
+#### Multi-Appareils
+PC1 → Active sync → PC2, PC3 automatiquement synchronisés
+
+#### Nouveau PC
+Installation Chrome + Extension + PIN = Tous les secrets disponibles
+
+#### Récupération
+PIN oublié ? Backup manuel toujours disponible en sécurité
+
+### 📚 Documentation
+
+- **README** : Section "Backup et Synchronisation" mise à jour
+- **GUIDE-SYNC-CHROME.md** : Guide complet
+- **GUIDE-DEMARRAGE-RAPIDE.md** : Mention de la sync Chrome
+
+### ⚠️ Limites Techniques
+
+- **Quota** : 100 KB dans `chrome.storage.sync` (nous utilisons ~1 KB)
+- **Délai** : Sync instantanée à quelques minutes max
+- **Plateformes** : Desktop uniquement (Windows, Mac, Linux, ChromeOS)
+- **Mobile** : Non supporté (Chrome mobile ne supporte pas les extensions)
+
+### 💡 Recommandation
+
+**Double Backup** : Utilisez les deux méthodes pour sécurité maximale
+- ☁️ Sync Chrome pour usage quotidien
+- 📁 Backup manuel une fois par mois
+
+---
+
+## Version 1.1.1 - Novembre 2024 💾
+
+### 🎉 Nouvelles Fonctionnalités
+
+#### Export/Import de la Master Key
+
+- **Export** : Téléchargez votre Master Key au format JSON
+  - Protection par PIN requise
+  - Format standardisé avec métadonnées
+  - Avertissements de sécurité intégrés
+
+- **Import** : Restaurez votre Master Key depuis un backup
+  - Validation du format de fichier
+  - Confirmation obligatoire avant remplacement
+  - Support de la migration entre ordinateurs
+
+- **Interface** : Nouvelle section dans la page Options
+  - Statut de la Master Key en temps réel
+  - Boutons dédiés pour export/import
+  - Messages d'erreur clairs
+
+### 📦 Nouveaux Fichiers
+
+- `GUIDE-BACKUP-MASTERKEY.md` : Guide complet pour l'export/import
+
+### 🔧 Modifications
+
+#### `options.html`
+- Ajout de la section "🔐 Gestion de la Master Key"
+- Nouveau modal pour demander le PIN lors des opérations sensibles
+- Styles pour les boutons warning/danger
+- Input file caché pour l'import
+
+#### `options.js`
+- Fonction `updateMasterKeyStatus()` : Affiche le statut de la Master Key
+- Fonction `promptForPin()` : Modal réutilisable pour demander le PIN
+- Fonction d'export : Télécharge la Master Key en JSON
+- Fonction d'import : Charge et valide la Master Key depuis un fichier
+- Validation du format et de la taille de la Master Key
+
+### 🔒 Sécurité
+
+- ✅ PIN requis pour export/import
+- ✅ Validation stricte du format de fichier
+- ✅ Avertissements multiples sur la sensibilité des données
+- ✅ Confirmation obligatoire avant remplacement
+- ✅ Master Key stockée en hexadécimal (64 caractères = 256 bits)
+
+### 📚 Documentation
+
+- Guide complet de backup : `GUIDE-BACKUP-MASTERKEY.md`
+- README mis à jour avec section backup
+- Cas d'usage : migration, sync multi-ordinateurs, récupération
+
+### ⚠️ Avertissements Importants
+
+**Le fichier exporté contient la Master Key en CLAIR**
+
+**À FAIRE** :
+- ✅ Stocker dans un gestionnaire de mots de passe
+- ✅ Chiffrer avec GPG/PGP
+- ✅ Stocker sur clé USB chiffrée
+- ✅ Garder dans un coffre-fort physique
+
+**À NE JAMAIS FAIRE** :
+- ❌ Envoyer par email
+- ❌ Stocker sur cloud non chiffré
+- ❌ Partager sur messagerie
+- ❌ Laisser dans dossier Téléchargements
+
+---
+
 ## Version 1.1.0 - Novembre 2024 🔐
 
 ### 🎉 Nouvelles Fonctionnalités Majeures
