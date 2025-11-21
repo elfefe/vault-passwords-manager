@@ -2,7 +2,6 @@
 const categorySelect = document.getElementById('categorySelect');
 const newCategoryBtn = document.getElementById('newCategoryBtn');
 const deleteCategoryBtn = document.getElementById('deleteCategoryBtn');
-const listBtn = document.getElementById('listBtn');
 const writeBtn = document.getElementById('writeBtn');
 const deleteBtn = document.getElementById('deleteBtn');
 const addFieldBtn = document.getElementById('addFieldBtn');
@@ -25,11 +24,14 @@ const createPinConfirm = document.getElementById('createPinConfirm');
 const createPinBtn = document.getElementById('createPinBtn');
 const createPinError = document.getElementById('createPinError');
 
-let settings = { vaultUrl: '', vaultToken: '', kvMount: 'passwords' };
+let settings = { vaultUrl: '', vaultToken: '', kvMount: '' };
 let isAuthenticated = false;
 let currentDecryptedToken = null;
+let currentPin = null; // PIN stocké en mémoire pendant la session
 let pendingToken = null; // Token en attente de configuration
+let pendingDisplayName = null; // Display name en attente
 let categories = []; // Liste des catégories
+const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.googleusercontent.com";
 
 // Limiter les inputs PIN à 4 chiffres et valider automatiquement quand 4 chiffres sont entrés
 authPinInput.addEventListener('input', (e) => {
@@ -65,6 +67,59 @@ optionsLink.addEventListener('click', (e) => {
   chrome.runtime.openOptionsPage();
 });
 
+// Fonction pour récupérer l'entity_name depuis le token
+async function getEntityNameFromToken(vaultUrl, token) {
+  try {
+    // D'abord, récupérer l'entity_id depuis le token
+    const tokenResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': token,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error('Impossible de récupérer les informations du token');
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const entityId = tokenData.data?.entity_id;
+    
+    if (!entityId) {
+      console.error('entity_id non trouvé dans le token');
+      return null;
+    }
+    
+    // Ensuite, récupérer l'entity_name avec l'entity_id
+    const entityResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/identity/entity/id/${entityId}`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': token,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!entityResponse.ok) {
+      throw new Error('Impossible de récupérer les informations de l\'entité');
+    }
+    
+    const entityData = await entityResponse.json();
+    const entityName = entityData.data?.name;
+    
+    if (!entityName) {
+      console.error('entity_name non trouvé dans l\'entité');
+      return null;
+    }
+    
+    // Remplacer les caractères non alphanumériques par des underscores
+    return entityName.replace(/[^a-zA-Z0-9]/g, "_");
+  } catch (error) {
+    console.error('Erreur lors de la récupération de l\'entity_name:', error);
+    return null;
+  }
+}
+
 // Toast notification
 function showToast(message, type = 'info') {
   toast.textContent = message;
@@ -94,6 +149,281 @@ function showSetupModal() {
   setupTokenInput.value = '';
   setupError.style.display = 'none';
   setupTokenInput.focus();
+  
+  // Setup Google Sign-In button click handler
+  const buttonDiv = document.getElementById('googleSignInButton');
+  if (buttonDiv) {
+    buttonDiv.innerHTML = '<button class="btn btn-primary" style="width: 100%; padding: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;"><svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>Se connecter avec Google</button>';
+    const button = buttonDiv.querySelector('button');
+    if (button) {
+      button.addEventListener('click', openGoogleSignIn);
+    }
+  }
+}
+
+// Open Google Sign-In using Vault's OIDC flow
+async function openGoogleSignIn() {
+  const vaultUrl = settings.vaultUrl || 'https://vault.exem.fr/';
+  
+  // Start the Vault OIDC auth flow
+  try {
+    // First, get the auth URL from Vault
+    const authResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/oidc/oidc/auth_url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: 'default-google-oidc',
+        redirect_uri: `${vaultUrl.replace(/\/$/, '')}/v1/auth/oidc/oidc/callback`
+      })
+    });
+
+    if (!authResponse.ok) {
+      const errorData = await authResponse.json().catch(() => ({}));
+      const errorMsg = errorData.errors?.[0] || `Erreur ${authResponse.status}`;
+      setupError.textContent = 'Erreur Vault: ' + errorMsg;
+      setupError.style.display = 'block';
+      return;
+    }
+
+    const authData = await authResponse.json();
+    const authUrl = authData.data?.auth_url;
+
+    if (!authUrl) {
+      setupError.textContent = 'Erreur: URL d\'authentification non reçue de Vault';
+      setupError.style.display = 'block';
+      return;
+    }
+  
+    // Open in popup window using Chrome API
+    const width = 500;
+    const height = 600;
+    const left = Math.round((screen.availLeft || 0) + (screen.availWidth - width) / 2);
+    const top = Math.round((screen.availTop || 0) + (screen.availHeight - height) / 2);
+
+    chrome.windows.create({
+      url: authUrl,
+      type: 'popup',
+      width: width,
+      height: height,
+      left: left,
+      top: top
+    }, (popupWindow) => {
+      if (chrome.runtime.lastError || !popupWindow) {
+        setupError.textContent = 'Impossible d\'ouvrir la fenêtre: ' + (chrome.runtime.lastError?.message || 'Erreur inconnue');
+        setupError.style.display = 'block';
+        return;
+      }
+
+      const tabId = popupWindow.tabs[0].id;
+      let callbackProcessed = false;
+
+      // Listen for tab updates to detect when we reach Vault callback
+      const tabUpdateListener = async (updatedTabId, changeInfo, tab) => {
+        if (updatedTabId !== tabId || callbackProcessed) return;
+        
+        // Check if we're on the Vault callback page
+        if (changeInfo.url && changeInfo.url.includes('vault.exem.fr') && 
+            changeInfo.url.includes('/auth/oidc/oidc/callback')) {
+          console.log('Detected Vault callback page:', changeInfo.url);
+          
+          // Wait a moment for the page to load
+          setTimeout(async () => {
+            try {
+              // Inject script to extract token from the page
+              const results = await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                  // Try to extract token from the page body
+                  const bodyText = document.body.innerText || document.body.textContent;
+
+                  console.log(bodyText);
+                  
+                  // Vault typically returns JSON with the token
+                  try {
+                    const data = JSON.parse(bodyText);
+                    return {
+                      success: true,
+                      token: data.auth?.client_token || null,
+                      data: data
+                    };
+                  } catch (e) {
+                    // If not JSON, try to find token in the text
+                    const tokenMatch = bodyText.match(/"client_token"\s*:\s*"([^"]+)"/);
+                    return {
+                      success: !!tokenMatch,
+                      token: tokenMatch ? tokenMatch[1] : null,
+                      rawText: bodyText.substring(0, 500) // First 500 chars for debugging
+                    };
+                  }
+                }
+              });
+
+              callbackProcessed = true;
+              chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+
+              if (!results || !results[0] || !results[0].result) {
+                setupError.textContent = 'Erreur: Impossible de lire la réponse de Vault';
+                setupError.style.display = 'block';
+                chrome.windows.remove(popupWindow.id);
+                return;
+              }
+
+              const result = results[0].result;
+              console.log('Extracted result:', result);
+
+              if (!result.success || !result.token) {
+                setupError.textContent = 'Erreur: Token non trouvé dans la réponse Vault';
+                setupError.style.display = 'block';
+                console.error('Vault response:', result);
+                chrome.windows.remove(popupWindow.id);
+                return;
+              }
+
+              // Close the popup
+              chrome.windows.remove(popupWindow.id);
+
+              // Process the token
+              handleVaultToken(result.token);
+            } catch (e) {
+              callbackProcessed = true;
+              chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+              setupError.textContent = 'Erreur: ' + e.message;
+              setupError.style.display = 'block';
+              console.error('Error extracting token:', e);
+              chrome.windows.remove(popupWindow.id);
+            }
+          }, 1000); // Wait 1 second for page to fully load
+        }
+      };
+
+      chrome.tabs.onUpdated.addListener(tabUpdateListener);
+
+      // Cleanup after 5 minutes
+      setTimeout(() => {
+        if (!callbackProcessed) {
+          chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+          chrome.windows.remove(popupWindow.id).catch(() => {});
+        }
+      }, 5 * 60 * 1000);
+    });
+  } catch (error) {
+    console.error('OIDC auth error:', error);
+    setupError.textContent = 'Erreur: ' + error.message;
+    setupError.style.display = 'block';
+  }
+}
+
+// Handle Vault token directly (without JWT exchange)
+async function handleVaultToken(vaultToken) {
+  const vaultUrl = settings.vaultUrl || 'https://vault.exem.fr/';
+
+  try {
+    // Verify the token is valid and get entity_name
+    const testResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': vaultToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!testResponse.ok) {
+      throw new Error('Token Vault invalide');
+    }
+
+    const entityName = await getEntityNameFromToken(vaultUrl, vaultToken);
+
+    // Create mount path if it doesn't exist
+    let mountPath = settings.kvMount || entityName;
+    const mountResult = await ensureMountPath(vaultUrl, vaultToken, mountPath);
+    if (!mountResult.success) {
+      const errorMsg = mountResult.message || 'Impossible de créer le mount path';
+      setupError.textContent = `Erreur mount: ${errorMsg}`;
+      setupError.style.display = 'block';
+      return;
+    }
+
+    // Token valid and mount created, store temporarily and ask for PIN creation
+    pendingToken = vaultToken;
+    pendingDisplayName = entityName;
+    hideSetupModal();
+    showCreatePinModal();
+  } catch (error) {
+    console.error('Token validation error:', error);
+    setupError.textContent = error.message || 'Erreur lors de la validation du token';
+    setupError.style.display = 'block';
+  }
+}
+
+// Handle Google OIDC credential response
+async function handleCredentialResponse(response) {
+  if (!response || !response.credential) {
+    setupError.textContent = 'Erreur: réponse Google invalide';
+    setupError.style.display = 'block';
+    return;
+  }
+
+  const googleIdToken = response.credential;
+  const vaultUrl = settings.vaultUrl || 'https://vault.exem.fr/';
+
+  try {
+    setupError.style.display = 'none';
+    
+    // Send JWT to Vault OIDC login endpoint
+    const loginResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/oidc/oidc/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'default-google-oidc', jwt: googleIdToken })
+    });
+
+    if (!loginResponse.ok) {
+      const errorData = await loginResponse.json().catch(() => ({}));
+      const errorMsg = errorData.errors?.[0] || `Erreur ${loginResponse.status} lors de la connexion OIDC`;
+      throw new Error(errorMsg);
+    }
+
+    const data = await loginResponse.json();
+    const vaultToken = data.auth?.client_token;
+
+    if (!vaultToken) {
+      throw new Error('Token Vault non reçu dans la réponse');
+    }
+
+    // Verify the token is valid and get entity_name
+    const testResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': vaultToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!testResponse.ok) {
+      throw new Error('Token Vault invalide');
+    }
+
+    const entityName = await getEntityNameFromToken(vaultUrl, vaultToken);
+
+    // Create mount path if it doesn't exist
+    let mountPath = settings.kvMount || entityName;
+    const mountResult = await ensureMountPath(vaultUrl, vaultToken, mountPath);
+    if (!mountResult.success) {
+      const errorMsg = mountResult.message || 'Impossible de créer le mount path';
+      setupError.textContent = `Erreur mount: ${errorMsg}. Vérifiez les permissions du token.`;
+      setupError.style.display = 'block';
+      return;
+    }
+
+    // Token valid and mount created, store temporarily and ask for PIN creation
+    pendingToken = vaultToken;
+    pendingDisplayName = entityName;
+    hideSetupModal();
+    showCreatePinModal();
+  } catch (error) {
+    console.error('OIDC authentication error:', error);
+    setupError.textContent = error.message || 'Erreur lors de l\'authentification OIDC';
+    setupError.style.display = 'block';
+  }
 }
 
 // Cacher le modal de configuration initiale
@@ -115,46 +445,13 @@ function hideCreatePinModal() {
   createPinModal.classList.remove('show');
 }
 
-// Vérifier si le mount path existe, sinon le créer
+// Créer le mount path s'il n'existe pas
 // Retourne { success: boolean, message?: string }
 async function ensureMountPath(vaultUrl, token, mountPath) {
   try {
-    // Vérifier si le mount existe en listant tous les mounts
-    const response = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/sys/mounts`, {
-      method: 'GET',
-      headers: {
-        'X-Vault-Token': token,
-        'Content-Type': 'application/json'
-      }
-    });
+    console.log(`Tentative de création du mount "${mountPath}"...`);
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      let error;
-      try {
-        error = JSON.parse(errorText);
-      } catch {
-        error = { errors: [errorText] };
-      }
-      const errorMsg = error.errors?.[0] || `Erreur ${response.status} lors de la liste des mounts`;
-      return { success: false, message: errorMsg };
-    }
-    
-    const mountsData = await response.json();
-    const mounts = mountsData.data || {};
-    
-    // Vérifier si le mount existe (avec ou sans slash final)
-    const mountPathWithSlash = mountPath.endsWith('/') ? mountPath : `${mountPath}/`;
-    const mountExists = mounts[mountPathWithSlash] !== undefined || mounts[mountPath] !== undefined;
-    
-    if (mountExists) {
-      // Le mount existe déjà
-      console.log(`Mount "${mountPath}" existe déjà`);
-      return { success: true };
-    }
-    
-    // Le mount n'existe pas, le créer
-    console.log(`Création du mount "${mountPath}"...`);
+    // Essayer directement de créer le mount
     const createResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/sys/mounts/${mountPath}`, {
       method: 'POST',
       headers: {
@@ -168,52 +465,50 @@ async function ensureMountPath(vaultUrl, token, mountPath) {
         }
       })
     });
-    
+
     const createResponseText = await createResponse.text();
     console.log('Réponse création mount:', createResponse.status, createResponseText);
-    
+
+    // Succès : 200 ou 204
     if (createResponse.ok || createResponse.status === 204) {
-      // Vérifier que le mount a bien été créé en relisant la liste des mounts
-      await new Promise(resolve => setTimeout(resolve, 500)); // Attendre un peu
-      const verifyResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/sys/mounts`, {
-        method: 'GET',
-        headers: {
-          'X-Vault-Token': token,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (verifyResponse.ok) {
-        const verifyData = await verifyResponse.json();
-        const verifyMounts = verifyData.data || {};
-        const mountPathWithSlash = mountPath.endsWith('/') ? mountPath : `${mountPath}/`;
-        const mountCreated = verifyMounts[mountPathWithSlash] !== undefined || verifyMounts[mountPath] !== undefined;
-        
-        if (mountCreated) {
-          console.log('Mount créé et vérifié avec succès');
-          return { success: true };
-        } else {
-          console.warn('Mount créé mais non trouvé dans la liste');
-          return { success: false, message: 'Mount créé mais non trouvé dans la liste' };
-        }
-      } else {
-        console.warn('Impossible de vérifier le mount après création:', verifyResponse.status);
-        return { success: false, message: 'Mount créé mais non vérifié' };
-      }
-    } else {
+      console.log('Mount créé avec succès');
+      return { success: true };
+    }
+
+    // Si erreur 400, vérifier si c'est parce que le mount existe déjà
+    if (createResponse.status === 400) {
       let error;
       try {
         error = JSON.parse(createResponseText);
       } catch {
         error = { errors: [createResponseText] };
       }
-      const errorMsg = error.errors?.[0] || `Erreur ${createResponse.status} lors de la création du mount`;
+      const errorMsg = error.errors?.[0] || '';
+
+      // Si le mount existe déjà, c'est un succès
+      if (errorMsg.includes('path is already in use') || errorMsg.includes('existing mount')) {
+        console.log(`Mount "${mountPath}" existe déjà`);
+        return { success: true };
+      }
+
+      // Autre erreur 400
       console.error('Erreur création mount:', errorMsg);
       return { success: false, message: errorMsg };
     }
+
+    // Autre code d'erreur
+    let error;
+    try {
+      error = JSON.parse(createResponseText);
+    } catch {
+      error = { errors: [createResponseText] };
+    }
+    const errorMsg = error.errors?.[0] || `Erreur ${createResponse.status} lors de la création du mount`;
+    console.error('Erreur création mount:', errorMsg);
+    return { success: false, message: errorMsg };
   } catch (error) {
     console.error('Exception ensureMountPath:', error);
-    return { success: false, message: error.message || 'Erreur réseau lors de la vérification du mount' };
+    return { success: false, message: error.message || 'Erreur réseau lors de la création du mount' };
   }
 }
 
@@ -224,22 +519,22 @@ async function authenticate(pin) {
     const stored = await new Promise((resolve) => {
       chrome.storage.local.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount'], resolve);
     });
-    
+
     if (!stored.encryptedToken || !stored.pinHash) {
       throw new Error('Configuration incomplète. Veuillez configurer l\'extension dans les options.');
     }
-    
+
     // Hasher le PIN saisi
     const pinHash = await window.cryptoUtils.sha256(pin);
-    
+
     // Vérifier le hash
     if (pinHash !== stored.pinHash) {
       throw new Error('Code incorrect');
     }
-    
+
     // Déchiffrer le token
     const decryptedToken = await window.cryptoUtils.decrypt(stored.encryptedToken, pin);
-    
+
     // Vérifier que le token est valide
     const testResponse = await fetch(`${stored.vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
       method: 'GET',
@@ -248,13 +543,25 @@ async function authenticate(pin) {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!testResponse.ok) {
       throw new Error('Token invalide. Veuillez reconfigurer l\'extension.');
     }
+
+    // Récupérer l'entity_name si kvMount n'est pas défini
+    let mountPath = stored.kvMount;
+    if (!mountPath) {
+      mountPath = await getEntityNameFromToken(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken);
+      if (!mountPath) {
+        throw new Error('Impossible de récupérer l\'entity_name. Le moteur de secrets ne peut pas être déterminé.');
+      }
+      // Sauvegarder le kvMount dans le storage pour la prochaine fois
+      await new Promise((resolve) => {
+        chrome.storage.local.set({ kvMount: mountPath }, resolve);
+      });
+    }
     
     // Créer le mount path s'il n'existe pas après authentification (optionnel)
-    const mountPath = stored.kvMount || 'passwords';
     const mountResult = await ensureMountPath(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken, mountPath);
     if (mountResult.success) {
       console.log('Mount path vérifié/créé avec succès');
@@ -263,17 +570,18 @@ async function authenticate(pin) {
       console.warn('Mount path:', errorMessage);
       showToast(`Mount "${mountPath}": ${errorMessage}`, 'error');
     }
-    
+
     // Authentification réussie
     currentDecryptedToken = decryptedToken;
+    currentPin = pin; // Stocker le PIN en mémoire pour le chiffrement des secrets
     settings.vaultUrl = stored.vaultUrl || 'https://vault.exem.fr/';
     settings.kvMount = mountPath;
     settings.vaultToken = decryptedToken;
     isAuthenticated = true;
-    
+
     // Charger les catégories depuis Vault après authentification
     await loadCategoriesFromVault();
-    
+
     hideAuthModal();
     return true;
   } catch (error) {
@@ -286,13 +594,13 @@ let authResolve = null;
 
 async function handleAuth() {
   const pin = authPinInput.value;
-  
+
   if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
     authError.textContent = 'Le code doit contenir exactement 4 chiffres';
     authError.style.display = 'block';
     return;
   }
-  
+
   try {
     await authenticate(pin);
     authError.style.display = 'none';
@@ -319,7 +627,7 @@ async function ensureAuthenticated() {
   if (isAuthenticated && currentDecryptedToken) {
     return true;
   }
-  
+
   return new Promise((resolve) => {
     showAuthModal();
     authResolve = resolve;
@@ -333,7 +641,7 @@ function clearSecretFields() {
 
 function addField(key = '', value = '', isPassword = false) {
   const row = document.createElement('tr');
-  
+
   // Cellule clé
   const keyCell = document.createElement('td');
   const keyInput = document.createElement('input');
@@ -341,7 +649,7 @@ function addField(key = '', value = '', isPassword = false) {
   keyInput.placeholder = 'clé';
   keyInput.value = key;
   keyCell.appendChild(keyInput);
-  
+
   // Cellule valeur avec boutons
   const valueCell = document.createElement('td');
   valueCell.className = 'value-cell';
@@ -354,12 +662,12 @@ function addField(key = '', value = '', isPassword = false) {
     valInput.classList.add('password-field');
   }
   valueCell.appendChild(valInput);
-  
+
   // Bouton toggle visibilité (visible au survol)
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'action-btn toggle-btn';
   toggleBtn.title = valInput.type === 'password' ? 'Afficher' : 'Masquer';
-  toggleBtn.innerHTML = valInput.type === 'password' 
+  toggleBtn.innerHTML = valInput.type === 'password'
     ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
     : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
   toggleBtn.addEventListener('click', () => {
@@ -374,7 +682,7 @@ function addField(key = '', value = '', isPassword = false) {
     }
   });
   valueCell.appendChild(toggleBtn);
-  
+
   // Bouton copier (visible au survol uniquement)
   const copyBtn = document.createElement('button');
   copyBtn.className = 'action-btn copy-btn';
@@ -401,7 +709,7 @@ function addField(key = '', value = '', isPassword = false) {
     }
   });
   valueCell.appendChild(copyBtn);
-  
+
   // Cellule actions (supprimer)
   const actionCell = document.createElement('td');
   actionCell.className = 'row-actions';
@@ -415,11 +723,11 @@ function addField(key = '', value = '', isPassword = false) {
     setTimeout(() => row.remove(), 150);
   });
   actionCell.appendChild(deleteBtn);
-  
+
   row.appendChild(keyCell);
   row.appendChild(valueCell);
   row.appendChild(actionCell);
-  
+
   // Animation d'entrée
   row.style.opacity = '0';
   row.style.transform = 'translateY(-5px)';
@@ -429,7 +737,7 @@ function addField(key = '', value = '', isPassword = false) {
     row.style.opacity = '1';
     row.style.transform = 'translateY(0)';
   }, 10);
-  
+
   // Auto-détection du type password lors de la saisie de la clé
   keyInput.addEventListener('input', () => {
     const keyLower = keyInput.value.toLowerCase();
@@ -450,7 +758,7 @@ newEntryBtn.addEventListener('click', () => {
     const valInput = row.querySelector('td:nth-child(2) input');
     return !keyInput.value.trim() && !valInput.value.trim();
   });
-  
+
   if (!hasEmptyRows) {
     addField('', '');
     showToast('Nouvelle entrée ajoutée', 'success');
@@ -466,23 +774,23 @@ copyAllBtn.addEventListener('click', async () => {
     showToast('Aucune entrée à copier', 'error');
     return;
   }
-  
+
   const data = {};
   rows.forEach(row => {
     const key = row.querySelector('td:first-child input').value.trim();
     const val = row.querySelector('td:nth-child(2) input').value;
     if (key) data[key] = val;
   });
-  
+
   if (Object.keys(data).length === 0) {
     showToast('Aucune entrée valide à copier', 'error');
     return;
   }
-  
+
   const text = Object.entries(data)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
-  
+
   try {
     await navigator.clipboard.writeText(text);
     showToast('Tout copié dans le presse-papiers', 'success');
@@ -533,7 +841,7 @@ function vaultFetch(path, opts = {}) {
   return fetch(url, opts).then(async (r) => {
     const text = await r.text();
     let json;
-    try { json = text ? JSON.parse(text) : {}; } catch(e) { json = { raw: text }; }
+    try { json = text ? JSON.parse(text) : {}; } catch (e) { json = { raw: text }; }
     if (!r.ok) {
       const err = new Error('Vault API error: ' + r.status);
       err.response = json;
@@ -596,31 +904,6 @@ async function deleteSecretCompletely(secretPath) {
 }
 
 // wire buttons avec authentification
-listBtn.addEventListener('click', async () => {
-  const authenticated = await ensureAuthenticated();
-  if (!authenticated) return;
-  
-  // Recharger les catégories depuis Vault
-  await loadCategoriesFromVault();
-  
-  const path = getCurrentPath();
-  if (!path) {
-    showToast('Aucune catégorie disponible', 'info');
-    return;
-  }
-  
-  try {
-    const res = await listSecrets(path);
-    const keys = (res && res.data && res.data.keys) || [];
-    if (keys.length === 0) {
-      showToast('Aucune clé trouvée', 'info');
-    } else {
-      showToast(`${keys.length} clé(s) trouvée(s)`, 'success');
-    }
-  } catch (e) {
-    showToast('Erreur lors du listing: ' + (e.response?.errors?.[0] || e.message), 'error');
-  }
-});
 
 // Fonction pour charger automatiquement les secrets d'une catégorie
 async function loadCategorySecrets(categoryPath) {
@@ -628,10 +911,10 @@ async function loadCategorySecrets(categoryPath) {
     clearSecretFields();
     return;
   }
-  
+
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
-  
+
   try {
     const res = await readSecret(categoryPath);
     const data = (res && res.data && res.data.data) || {};
@@ -639,10 +922,27 @@ async function loadCategorySecrets(categoryPath) {
     if (Object.keys(data).length === 0) {
       // Secret vide, ne rien afficher
     } else {
-      Object.entries(data).forEach(([k, v]) => {
+      // Déchiffrer les valeurs des secrets
+      for (const [k, v] of Object.entries(data)) {
+        let decryptedValue = v;
+        
+        // Vérifier si la valeur est chiffrée (format JSON avec iv, ciphertext, tag)
+        try {
+          const parsedValue = JSON.parse(v);
+          if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
+            // La valeur est chiffrée, la déchiffrer
+            const context = `vault-secret-${categoryPath}-${k}`;
+            decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
+            console.log(`Secret ${k} déchiffré avec succès`);
+          }
+        } catch (e) {
+          // Si ce n'est pas du JSON ou si le déchiffrement échoue, utiliser la valeur brute
+          console.log(`Secret ${k} non chiffré ou ancien format, utilisation de la valeur brute`);
+        }
+        
         const isPwd = k.toLowerCase().includes('password') || k.toLowerCase().includes('pass') || k.toLowerCase().includes('pwd');
-        addField(k, v, isPwd);
-      });
+        addField(k, decryptedValue, isPwd);
+      }
     }
   } catch (e) {
     // Si le secret n'existe pas, simplement vider les champs
@@ -653,20 +953,36 @@ async function loadCategorySecrets(categoryPath) {
 writeBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
-  
+
   const path = getCurrentPath();
-  if (!path) { 
-    showToast('Sélectionnez une catégorie ou créez-en une nouvelle', 'error'); 
-    return; 
+  if (!path) {
+    showToast('Sélectionnez une catégorie ou créez-en une nouvelle', 'error');
+    return;
   }
   const rows = Array.from(secretTableBody.querySelectorAll('tr'));
   const obj = {};
-  rows.forEach(row => {
+  
+  // Chiffrer les valeurs des secrets avant de les sauvegarder
+  for (const row of rows) {
     const key = row.querySelector('td:first-child input').value.trim();
     const val = row.querySelector('td:nth-child(2) input').value;
-    if (key) obj[key] = val;
-  });
-  
+    
+    if (key) {
+      // Chiffrer la valeur avec le système de chiffrement
+      try {
+        const context = `vault-secret-${path}-${key}`;
+        const encryptedValue = await window.cryptoSystem.encryptSecret(val, currentPin, context);
+        // Stocker l'objet chiffré en JSON
+        obj[key] = JSON.stringify(encryptedValue);
+        console.log(`Secret ${key} chiffré avec succès`);
+      } catch (error) {
+        console.error(`Erreur lors du chiffrement de ${key}:`, error);
+        showToast(`Erreur lors du chiffrement de ${key}: ${error.message}`, 'error');
+        return;
+      }
+    }
+  }
+
   try {
     // Vérifier si le secret existe déjà dans Vault
     let secretExists = false;
@@ -676,28 +992,28 @@ writeBtn.addEventListener('click', async () => {
     } catch (e) {
       secretExists = false;
     }
-    
+
     // Si le secret n'existe pas et qu'il n'y a pas de champs, ne rien faire
     if (!secretExists && Object.keys(obj).length === 0) {
       showToast('Le secret a été supprimé. Ajoutez des champs pour créer un nouveau secret.', 'info');
       return;
     }
-    
+
     // Si le secret existe mais qu'il n'y a pas de champs, c'est une erreur
     if (secretExists && Object.keys(obj).length === 0) {
       showToast('Aucun champ à sauvegarder', 'error');
       return;
     }
-    
+
     // Écrire le secret (cela crée le dossier passwords/nom_de_la_categorie si c'est le premier secret)
     await writeSecret(path, obj);
-    
+
     // Attendre un peu pour que Vault mette à jour
     await new Promise(resolve => setTimeout(resolve, 300));
-    
+
     // Recharger les catégories et s'assurer que la catégorie est toujours sélectionnée
     await loadCategoriesFromVault();
-    
+
     // S'assurer que la catégorie est toujours sélectionnée après rechargement et recharger les secrets
     setTimeout(async () => {
       if (categories.includes(path)) {
@@ -705,8 +1021,8 @@ writeBtn.addEventListener('click', async () => {
         await loadCategorySecrets(path);
       }
     }, 100);
-    
-    showToast('Secret sauvegardé avec succès', 'success');
+
+    showToast('Secret sauvegardé avec succès (chiffré)', 'success');
   } catch (e) {
     showToast('Erreur: ' + (e.response?.errors?.[0] || e.message), 'error');
   }
@@ -715,11 +1031,11 @@ writeBtn.addEventListener('click', async () => {
 deleteBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
-  
+
   const path = getCurrentPath();
-  if (!path) { 
-    showToast('Sélectionnez une catégorie', 'error'); 
-    return; 
+  if (!path) {
+    showToast('Sélectionnez une catégorie', 'error');
+    return;
   }
   if (!confirm(`Supprimer la metadata du secret "${path}" ? Cette action peut être irréversible.`)) return;
   try {
@@ -731,18 +1047,18 @@ deleteBtn.addEventListener('click', async () => {
     } catch (e) {
       secretExistsBefore = false;
     }
-    
+
     if (!secretExistsBefore) {
       showToast('Le secret n\'existe pas', 'error');
       return;
     }
-    
+
     // Supprimer le secret complètement
     await deleteSecretCompletely(path);
-    
+
     // Vérifier s'il reste des secrets dans la catégorie après suppression
     await new Promise(resolve => setTimeout(resolve, 300)); // Attendre que Vault mette à jour
-    
+
     // Vérifier si le secret principal existe encore
     let secretExistsAfter = false;
     try {
@@ -751,7 +1067,7 @@ deleteBtn.addEventListener('click', async () => {
     } catch (e) {
       secretExistsAfter = false;
     }
-    
+
     // Lister tous les secrets dans le dossier de la catégorie (sous-dossiers)
     let hasSubSecrets = false;
     try {
@@ -766,15 +1082,15 @@ deleteBtn.addEventListener('click', async () => {
       // Si on ne peut pas lister, considérer qu'il n'y a pas de sous-secrets
       hasSubSecrets = false;
     }
-    
+
     // Si c'était le dernier secret (pas de secret principal et pas de sous-secrets), supprimer le dossier
     if (!secretExistsAfter && !hasSubSecrets) {
       // Supprimer tous les secrets restants dans le dossier (s'il y en a)
       try {
         const remainingSecrets = await listAllSecretsInCategory(path);
         for (const secret of remainingSecrets) {
-          const secretPath = secret.endsWith('/') 
-            ? `${path}/${secret.slice(0, -1)}` 
+          const secretPath = secret.endsWith('/')
+            ? `${path}/${secret.slice(0, -1)}`
             : `${path}/${secret}`;
           try {
             await deleteSecretCompletely(secretPath);
@@ -791,9 +1107,9 @@ deleteBtn.addEventListener('click', async () => {
     } else {
       showToast('Suppression réussie', 'success');
     }
-    
+
     clearSecretFields();
-    
+
     // Recharger les catégories
     await loadCategoriesFromVault();
     // S'assurer que la catégorie est toujours sélectionnée si elle existe dans le fichier categories
@@ -816,9 +1132,9 @@ setupTokenBtn.addEventListener('click', async () => {
     setupError.style.display = 'block';
     return;
   }
-  
+
   const vaultUrl = settings.vaultUrl || 'https://vault.exem.fr/';
-  
+
   try {
     // Vérifier que le token est valide
     const testResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
@@ -828,13 +1144,15 @@ setupTokenBtn.addEventListener('click', async () => {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!testResponse.ok) {
       throw new Error('Token invalide. Vérifiez votre token Vault.');
     }
-    
+
+    const entityName = await getEntityNameFromToken(vaultUrl, token);
+
     // Créer le mount path s'il n'existe pas
-    const mountPath = settings.kvMount || 'passwords';
+    let mountPath = settings.kvMount || entityName;
     const mountResult = await ensureMountPath(vaultUrl, token, mountPath);
     if (!mountResult.success) {
       const errorMsg = mountResult.message || 'Impossible de créer le mount path';
@@ -842,9 +1160,10 @@ setupTokenBtn.addEventListener('click', async () => {
       setupError.style.display = 'block';
       return;
     }
-    
+
     // Token valide et mount créé, stocker temporairement et demander la création du PIN
     pendingToken = token;
+    pendingDisplayName = entityName;
     hideSetupModal();
     showCreatePinModal();
   } catch (error) {
@@ -857,48 +1176,56 @@ setupTokenBtn.addEventListener('click', async () => {
 createPinBtn.addEventListener('click', async () => {
   const pin = createPinInput.value;
   const pinConfirmValue = createPinConfirm.value;
-  
+
   if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
     createPinError.textContent = 'Le code doit contenir exactement 4 chiffres';
     createPinError.style.display = 'block';
     return;
   }
-  
+
   if (pin !== pinConfirmValue) {
     createPinError.textContent = 'Les codes ne correspondent pas';
     createPinError.style.display = 'block';
     return;
   }
-  
+
   if (!pendingToken) {
     createPinError.textContent = 'Erreur: token manquant';
     createPinError.style.display = 'block';
     return;
   }
-  
+
   createPinError.style.display = 'none';
-  
+
   try {
     // Hasher le PIN en SHA256
     const pinHash = await window.cryptoUtils.sha256(pin);
-    
+
     // Chiffrer le token avec le PIN
     const encryptedToken = await window.cryptoUtils.encrypt(pendingToken, pin);
+
+    // Initialiser le système de chiffrement (générer la master key)
+    await window.cryptoSystem.initializeCryptoSystem(pin);
+    console.log('Système de chiffrement initialisé avec succès');
+
+    // Déterminer le kvMount à utiliser
+    const kvMount = pendingDisplayName || settings.kvMount;
     
     // Sauvegarder dans chrome.storage.local
     await new Promise((resolve) => {
       chrome.storage.local.set({
         vaultUrl: settings.vaultUrl || 'https://vault.exem.fr/',
-        kvMount: settings.kvMount || 'passwords',
+        kvMount: kvMount,
         encryptedToken: encryptedToken,
         pinHash: pinHash
       }, resolve);
     });
-    
+
     hideCreatePinModal();
     showToast('Configuration enregistrée avec succès !', 'success');
     pendingToken = null;
-    
+    pendingDisplayName = null;
+
     // Maintenant demander l'authentification rapide pour utiliser l'extension
     setTimeout(() => {
       showAuthModal();
@@ -977,14 +1304,14 @@ async function removeCategory(categoryName) {
       // Le secret principal n'existe peut-être pas, continuer
       console.log(`Secret principal de ${categoryName} n'existe pas ou déjà supprimé`);
     }
-    
+
     // 2. Supprimer tous les secrets dans le dossier de la catégorie (passwords/nom_categorie/*)
     try {
       const secrets = await listAllSecretsInCategory(categoryName);
       console.log(`Secrets trouvés dans ${categoryName}:`, secrets);
       for (const secret of secrets) {
-        const secretPath = secret.endsWith('/') 
-          ? `${categoryName}/${secret.slice(0, -1)}` 
+        const secretPath = secret.endsWith('/')
+          ? `${categoryName}/${secret.slice(0, -1)}`
           : `${categoryName}/${secret}`;
         try {
           await deleteSecretCompletely(secretPath);
@@ -999,15 +1326,15 @@ async function removeCategory(categoryName) {
       // Si on ne peut pas lister les secrets, le dossier n'existe peut-être pas
       console.log(`Impossible de lister les secrets de ${categoryName}, le dossier n'existe peut-être pas`);
     }
-    
+
     // 3. Retirer la catégorie de la liste dans le fichier categories (categories/nom_categorie)
     categories = categories.filter(cat => cat !== categoryName);
     await saveCategoriesToFile();
     console.log(`Catégorie ${categoryName} retirée du fichier categories`);
-    
+
     // 4. Recharger les catégories et mettre à jour l'interface
     await loadCategoriesFromVault();
-    
+
     // 5. Réinitialiser la sélection de catégorie
     if (categories.length > 0) {
       categorySelect.value = categories[0];
@@ -1015,7 +1342,7 @@ async function removeCategory(categoryName) {
       categorySelect.value = '';
     }
     clearSecretFields();
-    
+
     console.log(`Catégorie ${categoryName} complètement supprimée (passwords/${categoryName} et categories/${categoryName})`);
   } catch (e) {
     console.error(`Erreur lors de la suppression de la catégorie ${categoryName}:`, e);
@@ -1049,14 +1376,14 @@ async function loadCategoriesFromVault() {
     updateCategorySelect();
     return;
   }
-  
+
   try {
     // S'assurer que le fichier categories existe
     await ensureCategoriesFileExists();
-    
+
     // Charger la liste des catégories depuis le fichier categories
     const loadedCategories = await loadCategoriesFromFile();
-    
+
     // Vérifier quelles catégories existent réellement dans Vault
     // Une catégorie peut exister dans le fichier categories sans avoir de dossier (pas encore de secret)
     // Mais si elle a un dossier, elle doit être dans le fichier categories
@@ -1073,11 +1400,11 @@ async function loadCategoriesFromVault() {
         validCategories.push(cat);
       }
     }
-    
+
     categories = validCategories;
-    
+
     console.log('Catégories chargées depuis le fichier categories:', categories);
-    
+
     // Mettre à jour le select
     updateCategorySelect();
   } catch (e) {
@@ -1103,7 +1430,7 @@ async function saveCategories() {
 function updateCategorySelect() {
   const previousValue = categorySelect.value;
   categorySelect.innerHTML = '';
-  
+
   if (categories.length === 0) {
     const option = document.createElement('option');
     option.value = '';
@@ -1111,14 +1438,14 @@ function updateCategorySelect() {
     categorySelect.appendChild(option);
     return;
   }
-  
+
   categories.forEach(category => {
     const option = document.createElement('option');
     option.value = category;
     option.textContent = category;
     categorySelect.appendChild(option);
   });
-  
+
   // Sélectionner la première catégorie par défaut ou restaurer la sélection précédente
   if (categories.length > 0) {
     if (previousValue && categories.includes(previousValue)) {
@@ -1146,18 +1473,18 @@ categorySelect.addEventListener('change', async () => {
 newCategoryBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
-  
+
   const categoryName = prompt('Entrez le nom de la nouvelle catégorie:');
   if (!categoryName || !categoryName.trim()) {
     return;
   }
-  
+
   const trimmedName = categoryName.trim();
   if (categories.includes(trimmedName)) {
     showToast('Cette catégorie existe déjà', 'error');
     return;
   }
-  
+
   // Ajouter la catégorie uniquement au fichier categories (pas de secret initial)
   try {
     // Ajouter la catégorie à la liste dans le fichier categories
@@ -1165,10 +1492,10 @@ newCategoryBtn.addEventListener('click', async () => {
       categories.push(trimmedName);
       await saveCategoriesToFile();
     }
-    
+
     // Recharger les catégories depuis Vault
     await loadCategoriesFromVault();
-    
+
     // S'assurer que la catégorie est sélectionnée et charger ses secrets
     if (categories.includes(trimmedName)) {
       categorySelect.value = trimmedName;
@@ -1187,17 +1514,17 @@ newCategoryBtn.addEventListener('click', async () => {
 deleteCategoryBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
-  
+
   const categoryName = getCurrentPath();
   if (!categoryName) {
     showToast('Sélectionnez une catégorie à supprimer', 'error');
     return;
   }
-  
+
   if (!confirm(`Êtes-vous sûr de vouloir supprimer la catégorie "${categoryName}" ?\n\nCette action supprimera :\n- Le dossier passwords/${categoryName}\n- L'entrée dans le fichier categories\n\nCette action est irréversible.`)) {
     return;
   }
-  
+
   try {
     await removeCategory(categoryName);
     showToast('Catégorie supprimée avec succès', 'success');
@@ -1212,24 +1539,27 @@ async function initialize() {
   // Initialiser les catégories (vide au début)
   categories = [];
   updateCategorySelect();
-  
+
   // Charger les paramètres
   const stored = await new Promise((resolve) => {
     chrome.storage.local.get(['vaultUrl', 'kvMount', 'encryptedToken', 'pinHash'], resolve);
   });
-  
+
   settings.vaultUrl = stored.vaultUrl || 'https://vault.exem.fr/';
-  settings.kvMount = stored.kvMount || 'passwords';
-  
+  settings.kvMount = stored.kvMount || '';
+
   // Vérifier si un token est configuré
   if (!stored.encryptedToken || !stored.pinHash) {
     // Pas de configuration, afficher le modal de configuration initiale
-    showSetupModal();
+    // Wait a bit for Google Identity Services to load
+    setTimeout(() => {
+      showSetupModal();
+    }, 100);
   } else {
     // Configuration existante, demander l'authentification rapide
     showAuthModal();
   }
-  
+
   // Ne pas initialiser de champs par défaut - les données viennent de Vault
 }
 

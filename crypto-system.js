@@ -1,0 +1,239 @@
+// crypto-system.js - Système de chiffrement complet pour Vault Password Manager
+// Basé sur ChaCha20-Poly1305 et BLAKE3
+
+// --------------------------------------------------------------
+// 1. GÉNÉRATION ET STOCKAGE DE LA MASTER KEY
+// --------------------------------------------------------------
+
+/**
+ * Génère une master key sécurisée
+ * @param {number} length - taille de la clé en bytes (défaut: 32 = 256 bits)
+ * @returns {Uint8Array}
+ */
+function generateMasterKey(length = 32) {
+  return crypto.getRandomValues(new Uint8Array(length));
+}
+
+/**
+ * Stocke la master key dans chrome.storage.local, chiffrée par le PIN
+ * @param {Uint8Array} masterKey - la master key à stocker
+ * @param {string} pin - le PIN à 4 chiffres pour chiffrer la master key
+ */
+async function storeMasterKey(masterKey, pin) {
+  // Convertir la master key en hex pour le stockage
+  const masterKeyHex = Array.from(masterKey)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  
+  // Chiffrer la master key avec le PIN en utilisant AES-GCM (ancien système)
+  const encryptedMasterKey = await window.cryptoUtils.encrypt(masterKeyHex, pin);
+  
+  // Stocker dans chrome.storage.local
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ encryptedMasterKey }, resolve);
+  });
+}
+
+/**
+ * Charge la master key depuis chrome.storage.local
+ * @param {string} pin - le PIN à 4 chiffres pour déchiffrer la master key
+ * @returns {Promise<Uint8Array>}
+ */
+async function loadMasterKey(pin) {
+  // Récupérer depuis chrome.storage.local
+  const stored = await new Promise((resolve) => {
+    chrome.storage.local.get(['encryptedMasterKey'], resolve);
+  });
+  
+  if (!stored.encryptedMasterKey) {
+    throw new Error('Master key not initialized!');
+  }
+  
+  // Déchiffrer la master key avec le PIN
+  const masterKeyHex = await window.cryptoUtils.decrypt(stored.encryptedMasterKey, pin);
+  
+  // Convertir de hex vers Uint8Array
+  const masterKey = new Uint8Array(
+    masterKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+  );
+  
+  return masterKey;
+}
+
+/**
+ * Vérifie si une master key existe déjà
+ * @returns {Promise<boolean>}
+ */
+async function hasMasterKey() {
+  const stored = await new Promise((resolve) => {
+    chrome.storage.local.get(['encryptedMasterKey'], resolve);
+  });
+  return !!stored.encryptedMasterKey;
+}
+
+// --------------------------------------------------------------
+// 2. DÉRIVATION DE SOUS-CLÉS AVEC BLAKE3
+// --------------------------------------------------------------
+
+/**
+ * Dérive une sous-clé à partir de la master key en utilisant BLAKE3
+ * @param {Uint8Array} masterKey - la master key
+ * @param {string} context - identifiant unique (ex: "secrets", "user-42", "vault-secret-123")
+ * @param {number} length - taille de la clé dérivée en bytes (défaut: 32)
+ * @returns {Promise<Uint8Array>}
+ */
+async function deriveSubKey(masterKey, context, length = 32) {
+  return await window.blake3.deriveKey(context, masterKey, { length });
+}
+
+// --------------------------------------------------------------
+// 3. CHIFFREMENT / DÉCHIFFREMENT AVEC ChaCha20-Poly1305
+// --------------------------------------------------------------
+
+const cipher = new window.ChaCha20Poly1305();
+
+/**
+ * Chiffre un texte en clair avec une clé
+ * @param {string|Uint8Array} plaintext - le texte à chiffrer
+ * @param {Uint8Array} key - la clé de chiffrement (32 bytes)
+ * @returns {Promise<Object>} - { iv, ciphertext, tag } encodés en base64
+ */
+async function encryptWithKey(plaintext, key) {
+  // Générer un nonce aléatoire
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  
+  // Chiffrer
+  const result = await cipher.encrypt(plaintext, key, nonce);
+  
+  // Convertir en base64 pour le stockage
+  return {
+    iv: btoa(String.fromCharCode(...result.nonce)),
+    ciphertext: btoa(String.fromCharCode(...result.ciphertext)),
+    tag: btoa(String.fromCharCode(...result.tag))
+  };
+}
+
+/**
+ * Déchiffre un texte chiffré avec une clé
+ * @param {Object} encrypted - { iv, ciphertext, tag } encodés en base64
+ * @param {Uint8Array} key - la clé de déchiffrement (32 bytes)
+ * @returns {Promise<string>} - le texte déchiffré
+ */
+async function decryptWithKey(encrypted, key) {
+  // Décoder depuis base64
+  const nonce = Uint8Array.from(atob(encrypted.iv), c => c.charCodeAt(0));
+  const ciphertext = Uint8Array.from(atob(encrypted.ciphertext), c => c.charCodeAt(0));
+  const tag = Uint8Array.from(atob(encrypted.tag), c => c.charCodeAt(0));
+  
+  // Déchiffrer
+  const plaintext = await cipher.decrypt(ciphertext, key, nonce, tag);
+  
+  // Convertir en string
+  return new TextDecoder().decode(plaintext);
+}
+
+// --------------------------------------------------------------
+// 4. API HAUT NIVEAU POUR LES SECRETS
+// --------------------------------------------------------------
+
+/**
+ * Chiffre un secret avec la master key et un contexte
+ * @param {string} secretValue - la valeur du secret à chiffrer
+ * @param {string} pin - le PIN pour déverrouiller la master key
+ * @param {string} context - contexte de dérivation (ex: nom du secret)
+ * @returns {Promise<Object>} - objet chiffré { iv, ciphertext, tag }
+ */
+async function encryptSecret(secretValue, pin, context) {
+  // Charger la master key
+  const masterKey = await loadMasterKey(pin);
+  
+  // Dériver une sous-clé pour ce secret
+  const subKey = await deriveSubKey(masterKey, context);
+  
+  // Chiffrer le secret
+  return await encryptWithKey(secretValue, subKey);
+}
+
+/**
+ * Déchiffre un secret avec la master key et un contexte
+ * @param {Object} encryptedSecret - objet chiffré { iv, ciphertext, tag }
+ * @param {string} pin - le PIN pour déverrouiller la master key
+ * @param {string} context - contexte de dérivation (doit être le même qu'au chiffrement)
+ * @returns {Promise<string>} - la valeur déchiffrée du secret
+ */
+async function decryptSecret(encryptedSecret, pin, context) {
+  // Charger la master key
+  const masterKey = await loadMasterKey(pin);
+  
+  // Dériver la même sous-clé
+  const subKey = await deriveSubKey(masterKey, context);
+  
+  // Déchiffrer le secret
+  return await decryptWithKey(encryptedSecret, subKey);
+}
+
+/**
+ * Initialise le système de chiffrement (génère et stocke la master key)
+ * @param {string} pin - le PIN à 4 chiffres
+ * @returns {Promise<void>}
+ */
+async function initializeCryptoSystem(pin) {
+  // Vérifier si une master key existe déjà
+  if (await hasMasterKey()) {
+    console.warn('Master key already exists, skipping initialization');
+    return;
+  }
+  
+  // Générer une nouvelle master key
+  const masterKey = generateMasterKey(32);
+  
+  console.log('Master key generated (length:', masterKey.length, 'bytes)');
+  
+  // Stocker la master key chiffrée par le PIN
+  await storeMasterKey(masterKey, pin);
+  
+  console.log('Master key stored successfully');
+}
+
+/**
+ * Change le PIN et re-chiffre la master key
+ * @param {string} oldPin - l'ancien PIN
+ * @param {string} newPin - le nouveau PIN
+ * @returns {Promise<void>}
+ */
+async function changePinAndReencryptMasterKey(oldPin, newPin) {
+  // Charger la master key avec l'ancien PIN
+  const masterKey = await loadMasterKey(oldPin);
+  
+  // Re-chiffrer avec le nouveau PIN
+  await storeMasterKey(masterKey, newPin);
+  
+  console.log('Master key re-encrypted with new PIN');
+}
+
+// --------------------------------------------------------------
+// 5. EXPORTER L'API
+// --------------------------------------------------------------
+
+if (typeof window !== 'undefined') {
+  window.cryptoSystem = {
+    // Gestion de la master key
+    initializeCryptoSystem,
+    hasMasterKey,
+    loadMasterKey,
+    changePinAndReencryptMasterKey,
+    
+    // Chiffrement/déchiffrement de secrets
+    encryptSecret,
+    decryptSecret,
+    
+    // API bas niveau (pour usage avancé)
+    generateMasterKey,
+    deriveSubKey,
+    encryptWithKey,
+    decryptWithKey
+  };
+}
+
+console.log('Crypto system initialized');
+

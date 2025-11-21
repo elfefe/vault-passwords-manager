@@ -23,10 +23,16 @@
   <h2>Configuration Vault</h2>
   <label>URL du Vault</label>
   <input id="vaultUrl" type="text" placeholder="https://vault.exem.fr/" value="https://vault.exem.fr/" />
-  <label>Token Vault</label>
-  <input id="vaultToken" type="password" placeholder="s.xxxxxx" />
   <label>Mount path KV</label>
   <input id="kvMount" type="text" placeholder="passwords" value="passwords"/>
+  <div style="margin-top: 16px;">
+    <p style="font-weight: 500; margin-bottom: 8px;">Authentification</p>
+    <p style="font-size: 0.9em; color: #6b7280; margin-bottom: 12px;">Connectez-vous avec Google pour obtenir votre token Vault</p>
+    <div id="googleSignInButton" style="display: flex; justify-content: center; margin-bottom: 16px;"></div>
+    <div style="text-align: center; color: #6b7280; font-size: 0.9em; margin: 16px 0;">ou</div>
+    <label>Token Vault (manuel)</label>
+    <input id="vaultToken" type="password" placeholder="s.xxxxxx" />
+  </div>
   <button id="saveBtn">Enregistrer et authentifier</button>
   <button id="clearBtn" class="secondary">Réinitialiser</button>
   <p class="note">
@@ -48,7 +54,10 @@
     </div>
   </div>
   
+  <script src="lib/blake3.js"></script>
+  <script src="lib/chacha20-poly1305.js"></script>
   <script src="crypto-utils.js"></script>
+  <script src="crypto-system.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

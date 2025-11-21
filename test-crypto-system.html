@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test du Système de Chiffrement</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2563eb;
+      margin-top: 0;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9fafb;
+      border-radius: 8px;
+      border-left: 4px solid #3b82f6;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    .result {
+      margin-top: 10px;
+      padding: 10px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .success {
+      color: #059669;
+      font-weight: bold;
+    }
+    .error {
+      color: #dc2626;
+      font-weight: bold;
+    }
+    input {
+      padding: 8px;
+      border: 2px solid #e5e7eb;
+      border-radius: 6px;
+      margin: 5px 0;
+      width: 200px;
+    }
+    .info {
+      background: #dbeafe;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid #3b82f6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 Test du Système de Chiffrement</h1>
+    
+    <div class="info">
+      <strong>ℹ️ Note :</strong> Ce fichier de test fonctionne uniquement dans le contexte d'une extension Chrome.
+      Ouvrez-le via les DevTools de l'extension ou intégrez les tests dans l'extension.
+    </div>
+
+    <!-- Test 1 : Génération de Master Key -->
+    <div class="test-section">
+      <h3>Test 1 : Génération de Master Key</h3>
+      <p>Génère une master key sécurisée de 32 bytes (256 bits)</p>
+      <button onclick="testGenerateMasterKey()">Générer Master Key</button>
+      <div id="test1-result" class="result"></div>
+    </div>
+
+    <!-- Test 2 : Dérivation de Sous-Clés -->
+    <div class="test-section">
+      <h3>Test 2 : Dérivation de Sous-Clés</h3>
+      <p>Dérive des sous-clés uniques à partir de la master key</p>
+      <button onclick="testDeriveSubKey()">Dériver Sous-Clés</button>
+      <div id="test2-result" class="result"></div>
+    </div>
+
+    <!-- Test 3 : Chiffrement/Déchiffrement -->
+    <div class="test-section">
+      <h3>Test 3 : Chiffrement et Déchiffrement</h3>
+      <p>Teste le chiffrement avec ChaCha20-Poly1305</p>
+      <input type="text" id="plaintext" placeholder="Texte à chiffrer" value="Mon secret ultra-sensible 🔒">
+      <br>
+      <button onclick="testEncryptDecrypt()">Chiffrer puis Déchiffrer</button>
+      <div id="test3-result" class="result"></div>
+    </div>
+
+    <!-- Test 4 : Authenticité -->
+    <div class="test-section">
+      <h3>Test 4 : Vérification d'Authenticité</h3>
+      <p>Vérifie que la modification du ciphertext est détectée</p>
+      <button onclick="testAuthenticity()">Tester Authenticité</button>
+      <div id="test4-result" class="result"></div>
+    </div>
+
+    <!-- Test 5 : Performance -->
+    <div class="test-section">
+      <h3>Test 5 : Performance</h3>
+      <p>Mesure le temps d'exécution pour 100 opérations</p>
+      <button onclick="testPerformance()">Lancer Test de Performance</button>
+      <div id="test5-result" class="result"></div>
+    </div>
+  </div>
+
+  <script src="lib/blake3.js"></script>
+  <script src="lib/chacha20-poly1305.js"></script>
+  <script>
+    let masterKey = null;
+
+    // Test 1 : Génération de Master Key
+    function testGenerateMasterKey() {
+      const result = document.getElementById('test1-result');
+      try {
+        masterKey = crypto.getRandomValues(new Uint8Array(32));
+        const hex = Array.from(masterKey).map(b => b.toString(16).padStart(2, '0')).join('');
+        result.innerHTML = `<span class="success">✅ Master Key générée avec succès !</span>\n\n`;
+        result.innerHTML += `Longueur: ${masterKey.length} bytes\n`;
+        result.innerHTML += `Hex: ${hex.substring(0, 64)}...\n`;
+        result.innerHTML += `Entropie: ~${(masterKey.length * 8)} bits`;
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Erreur: ${error.message}</span>`;
+      }
+    }
+
+    // Test 2 : Dérivation de Sous-Clés
+    async function testDeriveSubKey() {
+      const result = document.getElementById('test2-result');
+      try {
+        if (!masterKey) {
+          masterKey = crypto.getRandomValues(new Uint8Array(32));
+        }
+
+        const context1 = "vault-secret-passwords-api_key";
+        const context2 = "vault-secret-passwords-database";
+        const context3 = "vault-secret-passwords-api_key"; // Même que context1
+
+        const subKey1 = await window.blake3.deriveKey(context1, masterKey, { length: 32 });
+        const subKey2 = await window.blake3.deriveKey(context2, masterKey, { length: 32 });
+        const subKey3 = await window.blake3.deriveKey(context3, masterKey, { length: 32 });
+
+        const hex1 = Array.from(subKey1).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+        const hex2 = Array.from(subKey2).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+        const hex3 = Array.from(subKey3).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+
+        result.innerHTML = `<span class="success">✅ Dérivation réussie !</span>\n\n`;
+        result.innerHTML += `Contexte 1: "${context1}"\n`;
+        result.innerHTML += `Sous-clé 1: ${hex1}...\n\n`;
+        result.innerHTML += `Contexte 2: "${context2}"\n`;
+        result.innerHTML += `Sous-clé 2: ${hex2}...\n\n`;
+        result.innerHTML += `Contexte 3: "${context3}" (identique à 1)\n`;
+        result.innerHTML += `Sous-clé 3: ${hex3}...\n\n`;
+        
+        if (hex1 !== hex2) {
+          result.innerHTML += `<span class="success">✅ Différents contextes → différentes sous-clés</span>\n`;
+        } else {
+          result.innerHTML += `<span class="error">❌ Les sous-clés ne devraient pas être identiques!</span>\n`;
+        }
+        
+        if (hex1 === hex3) {
+          result.innerHTML += `<span class="success">✅ Même contexte → même sous-clé (déterministe)</span>`;
+        } else {
+          result.innerHTML += `<span class="error">❌ Les sous-clés devraient être identiques!</span>`;
+        }
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Erreur: ${error.message}</span>`;
+      }
+    }
+
+    // Test 3 : Chiffrement/Déchiffrement
+    async function testEncryptDecrypt() {
+      const result = document.getElementById('test3-result');
+      const plaintext = document.getElementById('plaintext').value;
+      
+      try {
+        if (!masterKey) {
+          masterKey = crypto.getRandomValues(new Uint8Array(32));
+        }
+
+        const context = "test-secret";
+        const key = await window.blake3.deriveKey(context, masterKey, { length: 32 });
+        
+        const cipher = new window.ChaCha20Poly1305();
+        const nonce = crypto.getRandomValues(new Uint8Array(12));
+        
+        // Chiffrement
+        const encrypted = await cipher.encrypt(plaintext, key, nonce);
+        
+        const ciphertextHex = Array.from(encrypted.ciphertext).map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        // Déchiffrement
+        const decrypted = await cipher.decrypt(encrypted.ciphertext, key, encrypted.nonce, encrypted.tag);
+        const decryptedText = new TextDecoder().decode(decrypted);
+        
+        result.innerHTML = `<span class="success">✅ Chiffrement et déchiffrement réussis !</span>\n\n`;
+        result.innerHTML += `Texte original: "${plaintext}"\n`;
+        result.innerHTML += `Longueur: ${plaintext.length} caractères\n\n`;
+        result.innerHTML += `Nonce (IV): ${Array.from(encrypted.nonce).map(b => b.toString(16).padStart(2, '0')).join('')}\n`;
+        result.innerHTML += `Ciphertext: ${ciphertextHex.substring(0, 64)}...\n`;
+        result.innerHTML += `Tag: ${Array.from(encrypted.tag).map(b => b.toString(16).padStart(2, '0')).join('')}\n\n`;
+        result.innerHTML += `Texte déchiffré: "${decryptedText}"\n\n`;
+        
+        if (plaintext === decryptedText) {
+          result.innerHTML += `<span class="success">✅ Le texte déchiffré correspond à l'original !</span>`;
+        } else {
+          result.innerHTML += `<span class="error">❌ Le texte déchiffré ne correspond pas !</span>`;
+        }
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Erreur: ${error.message}</span>`;
+      }
+    }
+
+    // Test 4 : Authenticité
+    async function testAuthenticity() {
+      const result = document.getElementById('test4-result');
+      
+      try {
+        if (!masterKey) {
+          masterKey = crypto.getRandomValues(new Uint8Array(32));
+        }
+
+        const plaintext = "Secret message";
+        const context = "test-secret";
+        const key = await window.blake3.deriveKey(context, masterKey, { length: 32 });
+        
+        const cipher = new window.ChaCha20Poly1305();
+        const nonce = crypto.getRandomValues(new Uint8Array(12));
+        
+        // Chiffrement
+        const encrypted = await cipher.encrypt(plaintext, key, nonce);
+        
+        // Modifier un byte du ciphertext
+        const tamperedCiphertext = new Uint8Array(encrypted.ciphertext);
+        tamperedCiphertext[0] = tamperedCiphertext[0] ^ 0xFF;
+        
+        result.innerHTML = `Test de modification du ciphertext...\n\n`;
+        
+        // Tenter de déchiffrer le ciphertext modifié
+        try {
+          await cipher.decrypt(tamperedCiphertext, key, encrypted.nonce, encrypted.tag);
+          result.innerHTML += `<span class="error">❌ La modification n'a pas été détectée !</span>`;
+        } catch (error) {
+          result.innerHTML += `<span class="success">✅ Modification détectée avec succès !</span>\n`;
+          result.innerHTML += `Message d'erreur: ${error.message}`;
+        }
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Erreur: ${error.message}</span>`;
+      }
+    }
+
+    // Test 5 : Performance
+    async function testPerformance() {
+      const result = document.getElementById('test5-result');
+      
+      try {
+        if (!masterKey) {
+          masterKey = crypto.getRandomValues(new Uint8Array(32));
+        }
+
+        const iterations = 100;
+        const plaintext = "Test message pour performance";
+        const context = "test-secret";
+        const key = await window.blake3.deriveKey(context, masterKey, { length: 32 });
+        const cipher = new window.ChaCha20Poly1305();
+        
+        result.innerHTML = `Test de performance (${iterations} itérations)...\n\n`;
+        
+        // Test de chiffrement
+        const encryptStart = performance.now();
+        for (let i = 0; i < iterations; i++) {
+          const nonce = crypto.getRandomValues(new Uint8Array(12));
+          await cipher.encrypt(plaintext, key, nonce);
+        }
+        const encryptTime = performance.now() - encryptStart;
+        
+        // Test de déchiffrement
+        const nonce = crypto.getRandomValues(new Uint8Array(12));
+        const encrypted = await cipher.encrypt(plaintext, key, nonce);
+        
+        const decryptStart = performance.now();
+        for (let i = 0; i < iterations; i++) {
+          await cipher.decrypt(encrypted.ciphertext, key, encrypted.nonce, encrypted.tag);
+        }
+        const decryptTime = performance.now() - decryptStart;
+        
+        result.innerHTML += `<span class="success">✅ Test de performance terminé !</span>\n\n`;
+        result.innerHTML += `Chiffrement:\n`;
+        result.innerHTML += `  - Temps total: ${encryptTime.toFixed(2)} ms\n`;
+        result.innerHTML += `  - Temps moyen: ${(encryptTime / iterations).toFixed(2)} ms/op\n`;
+        result.innerHTML += `  - Débit: ${(iterations / encryptTime * 1000).toFixed(0)} op/s\n\n`;
+        result.innerHTML += `Déchiffrement:\n`;
+        result.innerHTML += `  - Temps total: ${decryptTime.toFixed(2)} ms\n`;
+        result.innerHTML += `  - Temps moyen: ${(decryptTime / iterations).toFixed(2)} ms/op\n`;
+        result.innerHTML += `  - Débit: ${(iterations / decryptTime * 1000).toFixed(0)} op/s`;
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Erreur: ${error.message}</span>`;
+      }
+    }
+  </script>
+</body>
+</html>
+

@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="fr">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Vault - Passwords</title>
+  <title>Vault - Gestionnaire de Secrets</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
+
 <body>
   <div class="container">
     <header>
@@ -13,7 +15,9 @@
       <a id="optionsLink" href="#" title="Options" class="icon-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
-          <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+          <path
+            d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24">
+          </path>
         </svg>
       </a>
     </header>
@@ -22,13 +26,13 @@
         <select id="categorySelect" style="flex: 1;">
           <option value="">Chargement...</option>
         </select>
-        <button id="newCategoryBtn" class="btn btn-sm btn-secondary" title="Nouvelle catégorie">
+        <button id="newCategoryBtn" class="btn-icon" title="Nouvelle catégorie">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
         </button>
-        <button id="deleteCategoryBtn" class="btn btn-sm btn-danger" title="Supprimer la catégorie">
+        <button id="deleteCategoryBtn" class="btn-icon" title="Supprimer la catégorie">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -36,17 +40,6 @@
         </button>
       </div>
       <div class="button-group">
-        <button id="listBtn" class="btn btn-sm">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="8" y1="6" x2="21" y2="6"></line>
-            <line x1="8" y1="12" x2="21" y2="12"></line>
-            <line x1="8" y1="18" x2="21" y2="18"></line>
-            <line x1="3" y1="6" x2="3.01" y2="6"></line>
-            <line x1="3" y1="12" x2="3.01" y2="12"></line>
-            <line x1="3" y1="18" x2="3.01" y2="18"></line>
-          </svg>
-          Lister
-        </button>
         <button id="writeBtn" class="btn btn-sm btn-primary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -105,7 +98,9 @@
         </button>
         <button id="generateBtn" class="btn btn-sm btn-secondary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <path
+              d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+            </path>
             <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
             <line x1="12" y1="22.08" x2="12" y2="12"></line>
           </svg>
@@ -114,34 +109,46 @@
       </div>
     </section>
     <div id="toast" class="toast"></div>
-    
+
     <!-- Modal de configuration initiale -->
     <div id="setupModal" class="auth-modal">
       <div class="auth-modal-content">
         <h3>Configuration initiale</h3>
-        <p>Entrez votre token Vault pour commencer</p>
-        <input id="setupTokenInput" type="password" placeholder="s.xxxxxx" style="width: 100%; padding: 10px; margin-top: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;" />
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
+        <p>Connectez-vous avec votre compte Google pour obtenir un token Vault</p>
+        
+        <!-- Google Sign-In Button -->
+        <div id="googleSignInButton" style="margin-top: 16px;"></div>
+        
+        <div style="margin: 16px 0; text-align: center; color: #9ca3af; font-size: 0.9em;">
+          ou
+        </div>
+        
+        <p style="margin-bottom: 8px; font-size: 0.9em; color: #6b7280;">Entrez manuellement votre token Vault</p>
+        <input id="setupTokenInput" type="password" placeholder="s.xxxxxx"
+          style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;" />
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
           <button id="setupTokenBtn" class="btn btn-primary" style="flex: 1;">Continuer</button>
         </div>
         <p id="setupError" style="color: #ef4444; font-size: 0.9em; margin-top: 8px; display: none;"></p>
       </div>
     </div>
-    
+
     <!-- Modal de création de PIN -->
     <div id="createPinModal" class="auth-modal">
       <div class="auth-modal-content">
         <h3>Créer une clé d'authentification rapide</h3>
         <p>Entrez un code à 4 chiffres pour sécuriser votre token</p>
-        <input id="createPinInput" type="number" class="pin-input" placeholder="0000" maxlength="4" min="0" max="9999" />
-        <input id="createPinConfirm" type="number" class="pin-input" placeholder="Confirmer" maxlength="4" min="0" max="9999" style="margin-top: 12px;" />
+        <input id="createPinInput" type="number" class="pin-input" placeholder="0000" maxlength="4" min="0"
+          max="9999" />
+        <input id="createPinConfirm" type="number" class="pin-input" placeholder="Confirmer" maxlength="4" min max="9
+ 999" style="margin-top: 12px;" />
         <div style="margin-top: 16px; display: flex; gap: 8px;">
           <button id="createPinBtn" class="btn btn-primary" style="flex: 1;">Enregistrer</button>
         </div>
         <p id="createPinError" style="color: #ef4444; font-size: 0.9em; margin-top: 8px; display: none;"></p>
       </div>
     </div>
-    
+
     <!-- Modal d'authentification rapide -->
     <div id="authModal" class="auth-modal">
       <div class="auth-modal-content">
@@ -152,8 +159,11 @@
       </div>
     </div>
   </div>
+  <script src="lib/blake3.js"></script>
+  <script src="lib/chacha20-poly1305.js"></script>
   <script src="crypto-utils.js"></script>
+  <script src="crypto-system.js"></script>
   <script src="popup.js"></script>
 </body>
-</html>
 
+</html>

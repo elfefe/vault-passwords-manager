@@ -1,17 +1,28 @@
 # Vault Password Manager - Extension Chrome
 
-Extension Chrome (Manifest V3) pour gérer les mots de passe dans HashiCorp Vault (KV v2).
+Extension Chrome (Manifest V3) pour gérer les mots de passe dans HashiCorp Vault (KV v2) avec **chiffrement de bout en bout** utilisant **ChaCha20-Poly1305** et **BLAKE3**.
 
-## Fonctionnalités
+## 🔐 Fonctionnalités de Sécurité
+
+- ✅ **Chiffrement de bout en bout** : Les secrets sont chiffrés localement avant d'être envoyés à Vault
+- ✅ **ChaCha20-Poly1305** : Algorithme de chiffrement authentifié moderne et rapide
+- ✅ **BLAKE3** : Fonction de dérivation de clés haute performance
+- ✅ **Master Key sécurisée** : Génération cryptographiquement sécurisée de 256 bits
+- ✅ **Sous-clés uniques** : Chaque secret a sa propre clé de chiffrement dérivée
+- ✅ **Authentification rapide par PIN** : Code à 4 chiffres pour un accès rapide
+- ✅ **Authentification Google OIDC** : Connexion sécurisée via Google
+
+## 📋 Fonctionnalités
 
 - ✅ Configuration de l'URL du Vault et du token (page Options)
 - ✅ Lister / Lire / Créer / Mettre à jour / Supprimer des secrets dans un backend KV v2
 - ✅ Génération de mots de passe aléatoires sécurisés
-- ✅ Stockage de la configuration localement (chrome.storage)
-- ✅ Interface utilisateur améliorée avec tableau
+- ✅ Stockage sécurisé de la configuration (chrome.storage avec chiffrement)
+- ✅ Interface utilisateur moderne et intuitive
 - ✅ Copier/coller des valeurs avec un clic
 - ✅ Masquage/affichage des mots de passe
 - ✅ Détection automatique des champs de type password
+- ✅ Gestion de catégories de secrets
 
 ## Installation
 
@@ -28,17 +39,21 @@ Extension Chrome (Manifest V3) pour gérer les mots de passe dans HashiCorp Vaul
 
 3. **Configurer le Vault** :
    - Cliquez sur l'icône de l'extension dans la barre d'outils
-   - Cliquez sur l'icône ⚙️ pour ouvrir les options
-   - Entrez l'URL de votre Vault (ex: `https://vault.example.com`)
-   - Entrez votre token Vault
-   - Spécifiez le mount path KV (par défaut: `secret`)
-   - Cliquez sur "Enregistrer"
+   - **Première utilisation** : 
+     - Option 1 : Cliquez sur "Se connecter avec Google" pour obtenir un token Vault via OIDC
+     - Option 2 : Entrez manuellement votre token Vault
+   - **Créer un PIN** :
+     - Entrez un code à 4 chiffres pour sécuriser votre token
+     - Confirmez le code
+     - Le système génère automatiquement une Master Key chiffrée
+   - **Utilisation ultérieure** :
+     - Entrez simplement votre PIN à 4 chiffres pour vous authentifier
 
 ## Utilisation
 
 ### Lister les secrets
-1. Entrez un chemin (ou laissez vide pour la racine)
-2. Cliquez sur "Lister"
+1. Sélectionnez une catégorie dans le menu déroulant
+2. Les secrets se chargent automatiquement
 
 ### Lire un secret
 1. Entrez le chemin complet du secret (ex: `prod/database`)
@@ -67,30 +82,76 @@ Extension Chrome (Manifest V3) pour gérer les mots de passe dans HashiCorp Vaul
 
 ```
 .
-├── manifest.json          # Configuration de l'extension
-├── popup.html            # Interface principale
-├── popup.css             # Styles de l'interface
-├── popup.js              # Logique principale et API Vault
-├── options.html          # Page de configuration
-├── options.js            # Logique de configuration
-├── icons/                # Dossier des icônes
+├── manifest.json                  # Configuration de l'extension
+├── popup.html                    # Interface principale
+├── popup.css                     # Styles de l'interface
+├── popup.js                      # Logique principale et API Vault
+├── options.html                  # Page de configuration
+├── options.js                    # Logique de configuration
+├── crypto-utils.js               # Fonctions cryptographiques de base (AES-GCM, SHA-256)
+├── crypto-system.js              # Système de chiffrement principal (ChaCha20-Poly1305 + BLAKE3)
+├── lib/                          # Bibliothèques de chiffrement
+│   ├── blake3.js                # Implémentation BLAKE3 pour dérivation de clés
+│   └── chacha20-poly1305.js     # Implémentation ChaCha20-Poly1305
+├── icons/                        # Dossier des icônes
 │   ├── icon16.png
 │   ├── icon48.png
 │   ├── icon128.png
-│   ├── generate-icons.html  # Générateur d'icônes
+│   ├── generate-icons.html
 │   └── README.md
-└── README.md             # Ce fichier
+├── CRYPTO-SYSTEM.md              # Documentation détaillée du système de chiffrement
+├── test-crypto-system.html       # Tests interactifs du système
+└── README.md                     # Ce fichier
 ```
 
-## Sécurité
+## 🔒 Sécurité
 
-⚠️ **Important** : Le token Vault est stocké localement dans `chrome.storage`. C'est pratique pour le développement mais **risqué en production**.
+### Architecture de Chiffrement
 
-Pour un déploiement sérieux :
-- Utilisez AppRole ou OIDC pour l'authentification
-- Utilisez un backend intermédiaire qui émet des tokens courts
-- Ne partagez jamais votre token avec autrui
-- Restreignez les permissions `host_permissions` à votre domaine Vault uniquement
+Le système utilise une approche de **chiffrement en couches** :
+
+1. **Master Key (256 bits)** : Générée lors de la première configuration
+   - Stockée dans `chrome.storage.local` chiffrée par votre PIN
+   - Utilisée pour dériver toutes les sous-clés
+
+2. **Dérivation de Sous-Clés (BLAKE3)** :
+   - Chaque secret a sa propre sous-clé unique
+   - Contexte de dérivation : `vault-secret-{catégorie}-{nom}`
+   - Empêche la corrélation entre secrets
+
+3. **Chiffrement Authentifié (ChaCha20-Poly1305)** :
+   - Chiffre les valeurs des secrets avant envoi à Vault
+   - Authentification intégrée (détection de modifications)
+   - Performances élevées sans accélération matérielle
+
+4. **Protection du Token Vault** :
+   - Token chiffré avec AES-GCM et votre PIN
+   - Déchiffré uniquement en mémoire pendant la session
+
+### Modèle de Menace
+
+✅ **Protège contre :**
+- Accès non autorisé à `chrome.storage.local`
+- Compromission du serveur Vault (secrets chiffrés côté client)
+- Interception réseau (TLS + chiffrement supplémentaire)
+- Modifications non autorisées des secrets (authentification)
+
+⚠️ **Ne protège PAS contre :**
+- Compromission totale de la machine (malware, keylogger)
+- Oubli du PIN (tous les secrets deviennent inaccessibles)
+- Attaque par force brute du PIN (10 000 combinaisons seulement)
+
+### Recommandations
+
+Pour un déploiement en production :
+- ✅ **Utilisez OIDC** pour l'authentification (Google, Okta, etc.)
+- ✅ **Limitez les permissions** du token Vault au strict nécessaire
+- ✅ **Utilisez TLS** pour toutes les communications
+- ✅ **Sauvegardez** vos secrets chiffrés régulièrement
+- ✅ **Ne partagez jamais** votre PIN ou token
+- ⚠️ **Considérez un PIN plus long** pour un usage sensible (modifier le code)
+
+📖 **Documentation complète** : Consultez [CRYPTO-SYSTEM.md](CRYPTO-SYSTEM.md) pour plus de détails techniques.
 
 ## API Vault (KV v2)
 
@@ -100,14 +161,31 @@ L'extension utilise les endpoints suivants :
 - **Lister** : `GET /v1/<mount>/metadata/<path>?list=true`
 - **Supprimer** : `DELETE /v1/<mount>/metadata/<path>`
 
+## 🧪 Tests
+
+Un fichier de test interactif est disponible : `test-crypto-system.html`
+
+Tests disponibles :
+- ✅ Génération de Master Key
+- ✅ Dérivation de sous-clés
+- ✅ Chiffrement/déchiffrement
+- ✅ Vérification d'authenticité
+- ✅ Tests de performance
+
+## 🔄 Migration des Secrets Existants
+
+Les secrets existants stockés en clair dans Vault sont **automatiquement compatibles**. Lors de la première sauvegarde, ils seront re-chiffrés avec le nouveau système.
+
 ## Améliorations futures possibles
 
+- ✅ ~~Chiffrement côté client avant envoi~~ (Implémenté !)
 - Support des versions KV v2 (sélectionner version, restaurer)
-- Chiffrement côté client avant envoi
 - Auto-renouvellement du token via un backend
-- Import/export JSON
+- Import/export JSON (chiffré)
 - Recherche et filtrage des secrets
 - Historique des modifications
+- Rotation automatique de la Master Key
+- Support de plusieurs profils utilisateurs
 
 ## Licence
 
