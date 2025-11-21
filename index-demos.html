@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vault Password Manager - Démos & Documentation</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #290873, #7209B7, #F72585);
+      padding: 48px 24px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+      animation: fadeInDown 0.6s ease;
+    }
+
+    .logo {
+      font-size: 64px;
+      margin-bottom: 16px;
+      animation: pulse 2s ease infinite;
+    }
+
+    h1 {
+      color: white;
+      font-size: 42px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .subtitle {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      transition: all 0.3s ease;
+      animation: fadeInUp 0.6s ease backwards;
+      text-decoration: none;
+      display: block;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(90deg, #7209B7, #F72585);
+    }
+
+    .card-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .card-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #7209B7, #F72585);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .card-description {
+      font-size: 14px;
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+
+    .card-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-demo {
+      background: linear-gradient(135deg, #F72585, #7209B7);
+      color: white;
+    }
+
+    .badge-doc {
+      background: #ECE9F2;
+      color: #7209B7;
+    }
+
+    .footer {
+      text-align: center;
+      color: white;
+      font-size: 14px;
+      margin-top: 48px;
+      opacity: 0.8;
+    }
+
+    .footer a {
+      color: white;
+      text-decoration: underline;
+    }
+
+    @keyframes fadeInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+    }
+
+    .card:nth-child(1) { animation-delay: 0.1s; }
+    .card:nth-child(2) { animation-delay: 0.2s; }
+    .card:nth-child(3) { animation-delay: 0.3s; }
+    .card:nth-child(4) { animation-delay: 0.4s; }
+    .card:nth-child(5) { animation-delay: 0.5s; }
+    .card:nth-child(6) { animation-delay: 0.6s; }
+
+    @media (max-width: 640px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🔐</div>
+      <h1>Vault Password Manager</h1>
+      <p class="subtitle">Nouveau Design UI - Démos & Documentation</p>
+    </div>
+
+    <div class="grid">
+      <!-- Démo Interactive -->
+      <a href="demo-new-design.html" class="card">
+        <span class="card-icon">🚀</span>
+        <h3 class="card-title">Démo Interactive</h3>
+        <p class="card-description">
+          Testez le nouveau design en action avec des exemples interactifs.
+          Cliquez sur les boutons, voyez les animations !
+        </p>
+        <span class="card-badge badge-demo">Démo</span>
+      </a>
+
+      <!-- Comparaison Design -->
+      <a href="comparaison-design.html" class="card">
+        <span class="card-icon">🎨</span>
+        <h3 class="card-title">Comparaison</h3>
+        <p class="card-description">
+          Comparez l'ancien et le nouveau design côte à côte.
+          Visualisez toutes les améliorations.
+        </p>
+        <span class="card-badge badge-demo">Démo</span>
+      </a>
+
+      <!-- Documentation Technique -->
+      <a href="DESIGN-CHANGES.md" class="card">
+        <span class="card-icon">📚</span>
+        <h3 class="card-title">Changements Techniques</h3>
+        <p class="card-description">
+          Documentation complète de tous les changements CSS,
+          animations, couleurs et composants.
+        </p>
+        <span class="card-badge badge-doc">Doc</span>
+      </a>
+
+      <!-- Guide de Test -->
+      <a href="TESTER-NOUVEAU-DESIGN.md" class="card">
+        <span class="card-icon">✅</span>
+        <h3 class="card-title">Guide de Test</h3>
+        <p class="card-description">
+          Instructions étape par étape pour tester le nouveau
+          design dans l'extension Chrome.
+        </p>
+        <span class="card-badge badge-doc">Doc</span>
+      </a>
+
+      <!-- Implémentation -->
+      <a href="IMPLEMENTATION-COMPLETE.md" class="card">
+        <span class="card-icon">🎯</span>
+        <h3 class="card-title">Implémentation</h3>
+        <p class="card-description">
+          Résumé complet de l'implémentation avec checklist
+          et métriques du projet.
+        </p>
+        <span class="card-badge badge-doc">Doc</span>
+      </a>
+
+      <!-- Design de Référence -->
+      <a href="vault-ui.html" class="card">
+        <span class="card-icon">🎪</span>
+        <h3 class="card-title">Design Original</h3>
+        <p class="card-description">
+          Le design de référence qui a inspiré toute cette
+          refonte visuelle.
+        </p>
+        <span class="card-badge badge-demo">Ref</span>
+      </a>
+    </div>
+
+    <div class="footer">
+      <p>
+        Design inspiré de 
+        <a href="https://project-bubbly-cave-978.magicpatterns.app/" target="_blank">
+          Magic Patterns
+        </a>
+      </p>
+      <p style="margin-top: 8px;">
+        Version 1.1.2 • Novembre 2024
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+

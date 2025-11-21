@@ -1,6 +1,64 @@
 # 📝 Changelog - Vault Password Manager
 
-## Version 1.1.2 - Novembre 2024 ☁️
+## Version 1.1.2 - Novembre 2024 🎨
+
+### 🎨 Nouveau Design UI
+
+#### Refonte Complète de l'Interface
+
+- **Design moderne et vibrant** inspiré de [Magic Patterns](https://project-bubbly-cave-978.magicpatterns.app/)
+  - Palette de couleurs vibrante (violet, rose, bleu)
+  - Gradients élégants dans le header et les boutons
+  - Animations fluides et transitions élégantes
+  - Ombres colorées pour la profondeur
+
+- **Header avec gradient** :
+  - Dégradé violet → rose (135deg)
+  - Texte blanc avec icône intégrée
+  - Animation slideDown au chargement
+  - Effet hover sur l'icône settings
+
+- **Boutons modernisés** :
+  - Bouton primaire avec gradient rose-violet
+  - Ombres colorées selon le type
+  - Effet hover avec levée (translateY)
+  - Transitions fluides (0.2s cubic-bezier)
+
+- **Tableau des secrets amélioré** :
+  - Bordures arrondies (12px)
+  - Header avec fond gradient léger
+  - Hover sur lignes avec gradient transparent
+  - Boutons d'action colorés (bleu/violet/rose)
+  - Scrollbar personnalisée avec gradient
+
+- **Modaux redesignés** :
+  - Fond avec backdrop-filter blur
+  - Titres en gradient de texte
+  - Input PIN avec lettres espacées
+  - Animations fadeIn + slideUp
+
+- **Variables CSS** :
+  - `--color-primary: #290873` (Violet)
+  - `--color-pink: #F72585` (Rose)
+  - `--color-violet: #7209B7` (Violet secondaire)
+  - `--color-blue: #4361EE` (Bleu)
+  - Et 4 autres couleurs pour cohérence
+
+- **Démos et documentation** :
+  - `demo-new-design.html` - Démo interactive
+  - `comparaison-design.html` - Comparaison avant/après
+  - `index-demos.html` - Page d'accueil des démos
+  - `DESIGN-CHANGES.md` - Documentation technique
+  - `TESTER-NOUVEAU-DESIGN.md` - Guide de test
+  - `IMPLEMENTATION-COMPLETE.md` - Checklist complète
+
+#### Fichiers Modifiés
+
+- `popup.css` - Refonte complète avec nouveau design
+- `options.html` - Header gradient et styles modernisés
+- `README.md` - Section nouveau design ajoutée
+
+### ☁️ Synchronisation Chrome Automatique
 
 ### 🎉 Nouvelle Fonctionnalité Majeure
 

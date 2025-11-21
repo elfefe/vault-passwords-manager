@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comparaison Design - Vault Password Manager</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      color: white;
+      font-size: 42px;
+      margin-bottom: 16px;
+      font-weight: 800;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .subtitle {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 18px;
+      margin-bottom: 48px;
+      font-weight: 500;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-bottom: 48px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .panel h2 {
+      font-size: 28px;
+      margin-bottom: 20px;
+      font-weight: 700;
+    }
+
+    .old h2 {
+      color: #6b7280;
+    }
+
+    .new h2 {
+      background: linear-gradient(135deg, #7209B7, #F72585);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .feature-list {
+      list-style: none;
+      margin-top: 24px;
+    }
+
+    .feature-list li {
+      padding: 12px 0;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .feature-list li:last-child {
+      border-bottom: none;
+    }
+
+    .old .feature-list li::before {
+      content: '😐 ';
+      margin-right: 8px;
+    }
+
+    .new .feature-list li::before {
+      content: '✨ ';
+      margin-right: 8px;
+    }
+
+    .mockup {
+      margin-top: 24px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+      background: white;
+    }
+
+    .mockup-header {
+      padding: 16px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .old .mockup-header {
+      background: white;
+      color: #111827;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .new .mockup-header {
+      background: linear-gradient(135deg, #290873, #7209B7, #F72585);
+      color: white;
+    }
+
+    .mockup-content {
+      padding: 16px;
+      background: #fafafa;
+    }
+
+    .mockup-button {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 6px;
+      margin: 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .old .mockup-button {
+      background: #3b82f6;
+      color: white;
+      border: 1px solid #3b82f6;
+    }
+
+    .new .mockup-button {
+      background: linear-gradient(135deg, #F72585, #7209B7);
+      color: white;
+      border: none;
+      box-shadow: 0 4px 8px rgba(247, 37, 133, 0.3);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      margin-top: 48px;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .stat-number {
+      font-size: 48px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #7209B7, #F72585);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      color: #6b7280;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .cta {
+      text-align: center;
+      margin-top: 48px;
+    }
+
+    .cta-button {
+      display: inline-block;
+      background: white;
+      color: #7209B7;
+      padding: 16px 48px;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      transition: all 0.3s ease;
+    }
+
+    .cta-button:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    @media (max-width: 1024px) {
+      .comparison {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎨 Nouveau Design Vault Password Manager</h1>
+    <p class="subtitle">Comparaison entre l'ancien et le nouveau design</p>
+
+    <div class="comparison">
+      <!-- Ancien Design -->
+      <div class="panel old">
+        <h2>😐 Ancien Design</h2>
+        <ul class="feature-list">
+          <li>Header blanc sobre et minimaliste</li>
+          <li>Couleurs bleues et grises standards</li>
+          <li>Bordures fines et carrées</li>
+          <li>Transitions basiques</li>
+          <li>Apparence "utilitaire"</li>
+          <li>Boutons plats sans relief</li>
+          <li>Scrollbar native du navigateur</li>
+          <li>Modaux simples sans effet</li>
+        </ul>
+        <div class="mockup">
+          <div class="mockup-header">
+            Vault
+          </div>
+          <div class="mockup-content">
+            <button class="mockup-button">Sauvegarder</button>
+            <button class="mockup-button">Supprimer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Nouveau Design -->
+      <div class="panel new">
+        <h2>✨ Nouveau Design</h2>
+        <ul class="feature-list">
+          <li>Header avec gradient violet → rose magnifique</li>
+          <li>Palette vibrante (violet, rose, bleu)</li>
+          <li>Bordures arrondies et modernes</li>
+          <li>Animations fluides et élégantes</li>
+          <li>Apparence professionnelle et attrayante</li>
+          <li>Boutons avec gradients et ombres colorées</li>
+          <li>Scrollbar personnalisée avec gradient</li>
+          <li>Modaux avec blur et animations</li>
+        </ul>
+        <div class="mockup">
+          <div class="mockup-header">
+            🔐 Vault
+          </div>
+          <div class="mockup-content">
+            <button class="mockup-button">💾 Sauvegarder</button>
+            <button class="mockup-button">🗑️ Supprimer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-number">8</div>
+        <div class="stat-label">Couleurs vibrantes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">12</div>
+        <div class="stat-label">Animations</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">100%</div>
+        <div class="stat-label">Moderne</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">∞</div>
+        <div class="stat-label">Améliorations</div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta">
+      <a href="demo-new-design.html" class="cta-button">
+        🚀 Voir la Démo Interactive
+      </a>
+    </div>
+  </div>
+</body>
+</html>
+

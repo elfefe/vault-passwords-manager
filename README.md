@@ -2,6 +2,16 @@
 
 Extension Chrome (Manifest V3) pour gérer les mots de passe dans HashiCorp Vault (KV v2) avec **chiffrement de bout en bout** utilisant **ChaCha20-Poly1305** et **BLAKE3**.
 
+## 🎨 Nouveau Design UI (v1.1.2)
+
+L'extension bénéficie maintenant d'un **design moderne et vibrant** avec :
+- 🌈 **Palette de couleurs vibrante** (violet, rose, bleu)
+- ✨ **Animations fluides** et transitions élégantes
+- 🎯 **Interface moderne** inspirée de [Magic Patterns](https://project-bubbly-cave-978.magicpatterns.app/)
+- 💫 **Gradients colorés** et ombres subtiles
+
+👉 **[Voir les démos et la documentation →](index-demos.html)**
+
 ## 🔐 Fonctionnalités de Sécurité
 
 - ✅ **Chiffrement de bout en bout** : Les secrets sont chiffrés localement avant d'être envoyés à Vault
