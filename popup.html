@@ -138,10 +138,24 @@
       <div class="auth-modal-content">
         <h3>Créer une clé d'authentification rapide</h3>
         <p>Entrez un code à 4 chiffres pour sécuriser votre token</p>
-        <input id="createPinInput" type="number" class="pin-input" placeholder="0000" maxlength="4" min="0"
-          max="9999" />
-        <input id="createPinConfirm" type="number" class="pin-input" placeholder="Confirmer" maxlength="4" min max="9
- 999" style="margin-top: 12px;" />
+        <div class="pin-input-container">
+          <input id="createPinInput" type="password" class="pin-input" placeholder="••••" maxlength="4" />
+          <button type="button" class="pin-toggle-btn" id="toggleCreatePin" title="Afficher le PIN">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <div class="pin-input-container" style="margin-top: 12px;">
+          <input id="createPinConfirm" type="password" class="pin-input" placeholder="••••" maxlength="4" />
+          <button type="button" class="pin-toggle-btn" id="toggleCreatePinConfirm" title="Afficher le PIN">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
         <div style="margin-top: 16px; display: flex; gap: 8px;">
           <button id="createPinBtn" class="btn btn-primary" style="flex: 1;">Enregistrer</button>
         </div>
@@ -154,7 +168,7 @@
       <div class="auth-modal-content">
         <h3>Authentification rapide</h3>
         <p>Entrez votre code à 4 chiffres</p>
-        <input id="authPinInput" type="number" class="pin-input" placeholder="...." maxlength="4" min="0" max="9999" />
+        <input id="authPinInput" type="password" class="pin-input" placeholder="••••" maxlength="4" />
         <p id="authError" style="color: #ef4444; font-size: 0.9em; margin-top: 8px; display: none;"></p>
       </div>
     </div>

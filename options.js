@@ -29,12 +29,62 @@ let pinPromptResolve = null;
 
 // Limiter les inputs PIN à 4 chiffres
 pinInput.addEventListener('input', (e) => {
-  e.target.value = e.target.value.slice(0, 4);
+  // Permettre uniquement les chiffres
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
+});
+
+pinInput.addEventListener('keypress', (e) => {
+  // Bloquer les caractères non numériques
+  if (!/^\d$/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Tab') {
+    e.preventDefault();
+  }
 });
 
 pinConfirm.addEventListener('input', (e) => {
-  e.target.value = e.target.value.slice(0, 4);
+  // Permettre uniquement les chiffres
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
 });
+
+pinConfirm.addEventListener('keypress', (e) => {
+  // Bloquer les caractères non numériques
+  if (!/^\d$/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Tab') {
+    e.preventDefault();
+  }
+});
+
+// Toggle visibilité des PINs lors de la création
+const togglePinInput = document.getElementById('togglePinInput');
+const togglePinConfirm = document.getElementById('togglePinConfirm');
+
+if (togglePinInput) {
+  togglePinInput.addEventListener('click', () => {
+    const input = pinInput;
+    if (input.type === 'password') {
+      input.type = 'text';
+      togglePinInput.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      togglePinInput.title = 'Masquer le PIN';
+    } else {
+      input.type = 'password';
+      togglePinInput.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      togglePinInput.title = 'Afficher le PIN';
+    }
+  });
+}
+
+if (togglePinConfirm) {
+  togglePinConfirm.addEventListener('click', () => {
+    const input = pinConfirm;
+    if (input.type === 'password') {
+      input.type = 'text';
+      togglePinConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      togglePinConfirm.title = 'Masquer le PIN';
+    } else {
+      input.type = 'password';
+      togglePinConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      togglePinConfirm.title = 'Afficher le PIN';
+    }
+  });
+}
 
 function loadSettings() {
   chrome.storage.local.get(['vaultUrl', 'kvMount'], (res) => {
@@ -340,6 +390,48 @@ async function handleCredentialResponse(response) {
   }
 }
 
+// Fonction pour récupérer les métadonnées du token (TTL, dates d'expiration)
+async function getTokenMetadata(vaultUrl, token) {
+  try {
+    const tokenResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': token,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error('Impossible de récupérer les informations du token');
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const data = tokenData.data || {};
+    
+    // Extraire les informations de validité
+    const ttl = data.ttl || 0; // TTL en secondes
+    const creationTime = data.creation_time || 0; // Timestamp Unix
+    const expireTime = data.expire_time || null; // Timestamp Unix ou null si pas d'expiration
+    
+    // Calculer la date d'expiration si elle n'est pas fournie mais que le TTL existe
+    let calculatedExpireTime = expireTime;
+    if (!expireTime && ttl > 0 && creationTime > 0) {
+      calculatedExpireTime = creationTime + ttl;
+    }
+    
+    return {
+      ttl: ttl,
+      creationTime: creationTime,
+      expireTime: calculatedExpireTime,
+      renewable: data.renewable || false,
+      entityId: data.entity_id
+    };
+  } catch (error) {
+    console.error('Erreur lors de la récupération des métadonnées du token:', error);
+    return null;
+  }
+}
+
 // Helper function to save token with PIN
 async function saveTokenWithPin(vaultToken, pin) {
   const vaultUrl = vaultUrlInput.value.trim() || 'https://vault.exem.fr/';
@@ -369,6 +461,9 @@ async function saveTokenWithPin(vaultToken, pin) {
       throw new Error('Token invalide');
     }
     
+    // Récupérer les métadonnées du token (TTL, date d'expiration)
+    const tokenMetadata = await getTokenMetadata(vaultUrl, vaultToken);
+    
     // Create mount path if it doesn't exist
     const mountResult = await ensureMountPath(vaultUrl, vaultToken, kvMount);
     if (!mountResult.success) {
@@ -380,14 +475,30 @@ async function saveTokenWithPin(vaultToken, pin) {
     const encryptedToken = await window.cryptoUtils.encrypt(vaultToken, pin);
     const pinHash = await window.cryptoUtils.sha256(pin);
     
+    // Préparer les données à sauvegarder
+    const dataToSave = {
+      vaultUrl: vaultUrl,
+      kvMount: kvMount,
+      encryptedToken: encryptedToken,
+      pinHash: pinHash
+    };
+    
+    // Ajouter les métadonnées du token si disponibles
+    if (tokenMetadata) {
+      if (tokenMetadata.expireTime) {
+        dataToSave.tokenExpireTime = tokenMetadata.expireTime;
+      }
+      if (tokenMetadata.ttl) {
+        dataToSave.tokenTtl = tokenMetadata.ttl;
+      }
+      if (tokenMetadata.creationTime) {
+        dataToSave.tokenCreationTime = tokenMetadata.creationTime;
+      }
+    }
+    
     // Save to storage
     await new Promise((resolve) => {
-      chrome.storage.local.set({
-        vaultUrl: vaultUrl,
-        kvMount: kvMount,
-        encryptedToken: encryptedToken,
-        pinHash: pinHash
-      }, resolve);
+      chrome.storage.local.set(dataToSave, resolve);
     });
     
     alert('Configuration mise à jour avec succès !');
@@ -521,6 +632,9 @@ pinSaveBtn.addEventListener('click', async () => {
       throw new Error('Token invalide. Vérifiez votre token Vault.');
     }
     
+    // Récupérer les métadonnées du token (TTL, date d'expiration)
+    const tokenMetadata = await getTokenMetadata(vaultUrl, vaultToken);
+    
   // Si kvMount n'est pas défini, récupérer l'entity_name
   if (!kvMount) {
     kvMount = await getEntityNameFromToken(vaultUrl, vaultToken);
@@ -550,14 +664,30 @@ pinSaveBtn.addEventListener('click', async () => {
     await window.cryptoSystem.initializeCryptoSystem(pin);
     console.log('Système de chiffrement initialisé avec succès');
     
+    // Préparer les données à sauvegarder
+    const dataToSave = {
+      vaultUrl: vaultUrl,
+      kvMount: kvMount,
+      encryptedToken: encryptedToken,
+      pinHash: pinHash
+    };
+    
+    // Ajouter les métadonnées du token si disponibles
+    if (tokenMetadata) {
+      if (tokenMetadata.expireTime) {
+        dataToSave.tokenExpireTime = tokenMetadata.expireTime;
+      }
+      if (tokenMetadata.ttl) {
+        dataToSave.tokenTtl = tokenMetadata.ttl;
+      }
+      if (tokenMetadata.creationTime) {
+        dataToSave.tokenCreationTime = tokenMetadata.creationTime;
+      }
+    }
+    
     // Sauvegarder dans chrome.storage.local
     await new Promise((resolve) => {
-      chrome.storage.local.set({
-        vaultUrl: vaultUrl,
-        kvMount: kvMount,
-        encryptedToken: encryptedToken,
-        pinHash: pinHash
-      }, resolve);
+      chrome.storage.local.set(dataToSave, resolve);
     });
     
     hidePinModal();
@@ -628,6 +758,9 @@ saveBtn.addEventListener('click', async () => {
             throw new Error('Nouveau token invalide');
           }
           
+          // Récupérer les métadonnées du token (TTL, date d'expiration)
+          const tokenMetadata = await getTokenMetadata(vaultUrl, vaultToken);
+          
           // Créer le mount path s'il n'existe pas
           const mountResult = await ensureMountPath(vaultUrl, vaultToken, kvMount);
           if (!mountResult.success) {
@@ -638,12 +771,28 @@ saveBtn.addEventListener('click', async () => {
           // Chiffrer le nouveau token avec le même PIN
           const encryptedToken = await window.cryptoUtils.encrypt(vaultToken, currentPin);
           
+          // Préparer les données à sauvegarder
+          const dataToSave = {
+            vaultUrl: vaultUrl,
+            kvMount: kvMount,
+            encryptedToken: encryptedToken
+          };
+          
+          // Ajouter les métadonnées du token si disponibles
+          if (tokenMetadata) {
+            if (tokenMetadata.expireTime) {
+              dataToSave.tokenExpireTime = tokenMetadata.expireTime;
+            }
+            if (tokenMetadata.ttl) {
+              dataToSave.tokenTtl = tokenMetadata.ttl;
+            }
+            if (tokenMetadata.creationTime) {
+              dataToSave.tokenCreationTime = tokenMetadata.creationTime;
+            }
+          }
+          
           await new Promise((resolve) => {
-            chrome.storage.local.set({
-              vaultUrl: vaultUrl,
-              kvMount: kvMount,
-              encryptedToken: encryptedToken
-            }, resolve);
+            chrome.storage.local.set(dataToSave, resolve);
           });
           
           alert('Configuration mise à jour avec succès !');
@@ -836,7 +985,15 @@ function promptForPin(title, message) {
 
 // Gestionnaires du modal PIN prompt
 pinPromptInput.addEventListener('input', (e) => {
-  e.target.value = e.target.value.slice(0, 4);
+  // Permettre uniquement les chiffres
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
+});
+
+pinPromptInput.addEventListener('keypress', (e) => {
+  // Bloquer les caractères non numériques
+  if (!/^\d$/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Tab') {
+    e.preventDefault();
+  }
 });
 
 pinPromptOkBtn.addEventListener('click', async () => {

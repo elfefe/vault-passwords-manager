@@ -2,6 +2,48 @@
 
 ## Version 1.1.2 - Novembre 2024 🎨
 
+### 🔐 Sécurité PIN Améliorée
+
+#### Champs PIN Sécurisés
+
+- **PIN masqué avec "••••"** :
+  - Changement de `type="number"` à `type="password"`
+  - Affichage des caractères masqués pendant la saisie
+  - Protection contre le shoulder surfing
+
+- **Bouton "œil" pour vérification** :
+  - Ajouté lors de la création du PIN uniquement
+  - Permet de révéler/masquer le PIN pour vérification
+  - Pas de bouton lors de l'authentification (sécurité max)
+  - Icône change selon l'état (œil ouvert/barré)
+
+- **Validation numérique stricte** :
+  - Seuls les chiffres 0-9 acceptés
+  - Blocage des caractères non numériques
+  - Limitation automatique à 4 caractères
+  - Code JavaScript robuste
+
+#### Modaux Concernés
+
+- `authModal` (popup) - PIN masqué, pas de bouton œil
+- `createPinModal` (popup) - PIN masqué + boutons œil
+- `pinModal` (options) - PIN masqué + boutons œil
+- `pinPromptModal` (options) - PIN masqé
+
+#### Fichiers Modifiés
+
+- `popup.html` - Ajout des boutons œil et type password
+- `popup.js` - Validation numérique et toggle visibilité
+- `popup.css` - Styles pour boutons œil
+- `options.html` - Ajout des boutons œil et type password
+- `options.js` - Validation numérique et toggle visibilité
+
+#### Documentation
+
+- `demo-pin-security.html` - Démo interactive des améliorations
+- `PIN-SECURITY-UPDATE.md` - Documentation complète
+- `index-demos.html` - Ajout du lien vers la démo PIN
+
 ### 🎨 Nouveau Design UI
 
 #### Refonte Complète de l'Interface

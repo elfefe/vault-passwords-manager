@@ -35,7 +35,8 @@ const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.goo
 
 // Limiter les inputs PIN à 4 chiffres et valider automatiquement quand 4 chiffres sont entrés
 authPinInput.addEventListener('input', (e) => {
-  e.target.value = e.target.value.slice(0, 4);
+  // Permettre uniquement les chiffres
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
   // Valider automatiquement quand 4 chiffres sont entrés
   if (e.target.value.length === 4 && /^\d{4}$/.test(e.target.value)) {
     handleAuth();
@@ -46,15 +47,69 @@ authPinInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {
     handleAuth();
   }
+  // Bloquer les caractères non numériques
+  if (!/^\d$/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace') {
+    e.preventDefault();
+  }
 });
 
 createPinInput.addEventListener('input', (e) => {
-  e.target.value = e.target.value.slice(0, 4);
+  // Permettre uniquement les chiffres
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
+});
+
+createPinInput.addEventListener('keypress', (e) => {
+  // Bloquer les caractères non numériques
+  if (!/^\d$/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Tab') {
+    e.preventDefault();
+  }
 });
 
 createPinConfirm.addEventListener('input', (e) => {
-  e.target.value = e.target.value.slice(0, 4);
+  // Permettre uniquement les chiffres
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
 });
+
+createPinConfirm.addEventListener('keypress', (e) => {
+  // Bloquer les caractères non numériques
+  if (!/^\d$/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Tab') {
+    e.preventDefault();
+  }
+});
+
+// Toggle visibilité des PINs lors de la création
+const toggleCreatePin = document.getElementById('toggleCreatePin');
+const toggleCreatePinConfirm = document.getElementById('toggleCreatePinConfirm');
+
+if (toggleCreatePin) {
+  toggleCreatePin.addEventListener('click', () => {
+    const input = createPinInput;
+    if (input.type === 'password') {
+      input.type = 'text';
+      toggleCreatePin.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      toggleCreatePin.title = 'Masquer le PIN';
+    } else {
+      input.type = 'password';
+      toggleCreatePin.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      toggleCreatePin.title = 'Afficher le PIN';
+    }
+  });
+}
+
+if (toggleCreatePinConfirm) {
+  toggleCreatePinConfirm.addEventListener('click', () => {
+    const input = createPinConfirm;
+    if (input.type === 'password') {
+      input.type = 'text';
+      toggleCreatePinConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      toggleCreatePinConfirm.title = 'Masquer le PIN';
+    } else {
+      input.type = 'password';
+      toggleCreatePinConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      toggleCreatePinConfirm.title = 'Afficher le PIN';
+    }
+  });
+}
 
 setupTokenInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {
@@ -66,6 +121,614 @@ optionsLink.addEventListener('click', (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
+
+// Fonction pour récupérer les métadonnées du token (TTL, dates d'expiration)
+async function getTokenMetadata(vaultUrl, token) {
+  try {
+    const tokenResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': token,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error('Impossible de récupérer les informations du token');
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const data = tokenData.data || {};
+    
+    // Extraire les informations de validité
+    const ttl = data.ttl || 0; // TTL en secondes
+    const creationTime = data.creation_time || 0; // Timestamp Unix
+    const expireTime = data.expire_time || null; // Timestamp Unix ou null si pas d'expiration
+    
+    // Calculer la date d'expiration si elle n'est pas fournie mais que le TTL existe
+    let calculatedExpireTime = expireTime;
+    if (!expireTime && ttl > 0 && creationTime > 0) {
+      calculatedExpireTime = creationTime + ttl;
+    }
+    
+    return {
+      ttl: ttl,
+      creationTime: creationTime,
+      expireTime: calculatedExpireTime,
+      renewable: data.renewable || false,
+      entityId: data.entity_id
+    };
+  } catch (error) {
+    console.error('Erreur lors de la récupération des métadonnées du token:', error);
+    return null;
+  }
+}
+
+// Fonction pour vérifier si le token est encore valide
+async function isTokenValid(vaultUrl, token) {
+  try {
+    const metadata = await getTokenMetadata(vaultUrl, token);
+    if (!metadata) {
+      return false;
+    }
+    
+    // Si pas de date d'expiration, considérer comme valide (token sans expiration)
+    if (!metadata.expireTime) {
+      return true;
+    }
+    
+    // Vérifier si la date d'expiration est dans le futur
+    const now = Math.floor(Date.now() / 1000); // Timestamp Unix en secondes
+    return metadata.expireTime > now;
+  } catch (error) {
+    console.error('Erreur lors de la vérification de validité du token:', error);
+    return false;
+  }
+}
+
+// Fonction pour régénérer automatiquement le token via OIDC et le sauvegarder
+// Cette fonction ouvre le flux OIDC, récupère le nouveau token et le sauvegarde avec le PIN existant
+async function regenerateTokenAndSave(vaultUrl, pin) {
+  return new Promise((resolve, reject) => {
+    // Afficher un message à l'utilisateur
+    showToast('Régénération du token en cours...', 'info');
+    
+    // Sauvegarder le handler original
+    const originalHandleVaultToken = window.handleVaultToken;
+    let tokenResolved = false;
+    
+    // Créer un handler temporaire pour capturer et sauvegarder le nouveau token
+    window.handleVaultToken = async (newToken) => {
+      if (tokenResolved) return; // Éviter les appels multiples
+      tokenResolved = true;
+      
+      try {
+        // Restaurer le handler original immédiatement
+        window.handleVaultToken = originalHandleVaultToken;
+        
+        // Vérifier que le token est valide
+        const testResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+          method: 'GET',
+          headers: {
+            'X-Vault-Token': newToken,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!testResponse.ok) {
+          throw new Error('Nouveau token invalide');
+        }
+
+        // Récupérer les métadonnées du token (TTL, date d'expiration)
+        const tokenMetadata = await getTokenMetadata(vaultUrl, newToken);
+        
+        // Récupérer les données existantes
+        const stored = await new Promise((resolve) => {
+          chrome.storage.local.get(['kvMount'], resolve);
+        });
+        
+        // Récupérer l'entity_name si nécessaire
+        let kvMount = stored.kvMount;
+        if (!kvMount) {
+          kvMount = await getEntityNameFromToken(vaultUrl, newToken);
+        }
+        
+        // Créer le mount path s'il n'existe pas
+        if (kvMount) {
+          const mountResult = await ensureMountPath(vaultUrl, newToken, kvMount);
+          if (!mountResult.success) {
+            console.warn('Erreur mount lors de la régénération:', mountResult.message);
+          }
+        }
+        
+        // Chiffrer le nouveau token avec le PIN existant
+        const encryptedToken = await window.cryptoUtils.encrypt(newToken, pin);
+        const pinHash = await window.cryptoUtils.sha256(pin);
+        
+        // Préparer les données à sauvegarder
+        const dataToSave = {
+          vaultUrl: vaultUrl,
+          encryptedToken: encryptedToken,
+          pinHash: pinHash
+        };
+        
+        if (kvMount) {
+          dataToSave.kvMount = kvMount;
+        }
+        
+        // Ajouter les métadonnées du token si disponibles
+        if (tokenMetadata) {
+          if (tokenMetadata.expireTime) {
+            dataToSave.tokenExpireTime = tokenMetadata.expireTime;
+          }
+          if (tokenMetadata.ttl) {
+            dataToSave.tokenTtl = tokenMetadata.ttl;
+          }
+          if (tokenMetadata.creationTime) {
+            dataToSave.tokenCreationTime = tokenMetadata.creationTime;
+          }
+        }
+        
+        // Sauvegarder le nouveau token
+        await new Promise((resolve) => {
+          chrome.storage.local.set(dataToSave, resolve);
+        });
+        
+        console.log('Token régénéré et sauvegardé avec succès');
+        showToast('Token régénéré avec succès', 'success');
+        
+        // Retourner le token déchiffré pour continuer l'authentification
+        resolve(newToken);
+      } catch (error) {
+        // Restaurer le handler original en cas d'erreur
+        window.handleVaultToken = originalHandleVaultToken;
+        console.error('Erreur lors de la régénération du token:', error);
+        showToast('Erreur lors de la régénération: ' + error.message, 'error');
+        reject(error);
+      }
+    };
+    
+    // Ouvrir le flux OIDC en utilisant la même logique que openGoogleSignIn
+    // mais sans afficher d'erreur dans setupError (on gère les erreurs ici)
+    (async () => {
+      try {
+        // First, get the auth URL from Vault
+        const authResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/oidc/oidc/auth_url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'default-google-oidc',
+            redirect_uri: `${vaultUrl.replace(/\/$/, '')}/v1/auth/oidc/oidc/callback`
+          })
+        });
+
+        if (!authResponse.ok) {
+          const errorData = await authResponse.json().catch(() => ({}));
+          const errorMsg = errorData.errors?.[0] || `Erreur ${authResponse.status}`;
+          throw new Error('Erreur Vault: ' + errorMsg);
+        }
+
+        const authData = await authResponse.json();
+        const authUrl = authData.data?.auth_url;
+
+        if (!authUrl) {
+          throw new Error('URL d\'authentification non reçue de Vault');
+        }
+      
+        // Open in popup window using Chrome API
+        const width = 500;
+        const height = 600;
+        const left = Math.round((screen.availLeft || 0) + (screen.availWidth - width) / 2);
+        const top = Math.round((screen.availTop || 0) + (screen.availHeight - height) / 2);
+
+        chrome.windows.create({
+          url: authUrl,
+          type: 'popup',
+          width: width,
+          height: height,
+          left: left,
+          top: top
+        }, (popupWindow) => {
+          if (chrome.runtime.lastError || !popupWindow) {
+            window.handleVaultToken = originalHandleVaultToken;
+            reject(new Error('Impossible d\'ouvrir la fenêtre: ' + (chrome.runtime.lastError?.message || 'Erreur inconnue')));
+            return;
+          }
+
+          const tabId = popupWindow.tabs[0].id;
+          let callbackProcessed = false;
+          
+          // Injecter l'overlay IMMÉDIATEMENT dès que la popup est créée
+          // On utilise un listener pour injecter dès que le tab commence à se charger
+          const injectOverlay = async () => {
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                  // Créer l'overlay immédiatement
+                  if (!document.getElementById('vault-auth-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.id = 'vault-auth-overlay';
+                    overlay.style.cssText = `
+                      position: fixed;
+                      top: 0;
+                      left: 0;
+                      width: 100vw;
+                      height: 100vh;
+                      background: linear-gradient(135deg, #290873, #7209B7, #F72585);
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      z-index: 999999;
+                      font-family: Arial, sans-serif;
+                      color: white;
+                      text-align: center;
+                      padding: 20px;
+                    `;
+                    overlay.innerHTML = `
+                      <div>
+                        <div style="font-size: 24px; margin-bottom: 10px; animation: spin 1s linear infinite;">⏳</div>
+                        <p style="font-size: 18px; margin: 0;">Traitement en cours...</p>
+                      </div>
+                      <style>
+                        @keyframes spin {
+                          from { transform: rotate(0deg); }
+                          to { transform: rotate(360deg); }
+                        }
+                      </style>
+                    `;
+                    
+                    // Ajouter au document dès que possible
+                    const addOverlay = () => {
+                      if (document.documentElement) {
+                        document.documentElement.appendChild(overlay);
+                      } else if (document.body) {
+                        document.body.appendChild(overlay);
+                      } else {
+                        // Attendre que le document soit prêt
+                        if (document.readyState === 'loading') {
+                          document.addEventListener('DOMContentLoaded', addOverlay);
+                        } else {
+                          setTimeout(addOverlay, 0);
+                        }
+                      }
+                    };
+                    addOverlay();
+                    
+                    // Cacher tout contenu qui apparaît
+                    const hideContent = () => {
+                      if (document.body) {
+                        document.body.style.visibility = 'hidden';
+                        document.body.style.opacity = '0';
+                        document.body.style.display = 'none';
+                      }
+                    };
+                    
+                    // Observer les changements
+                    const observer = new MutationObserver(() => {
+                      hideContent();
+                    });
+                    
+                    if (document.documentElement) {
+                      observer.observe(document.documentElement, {
+                        childList: true,
+                        subtree: true
+                      });
+                    }
+                    
+                    // Cacher immédiatement si le body existe déjà
+                    hideContent();
+                  }
+                },
+                world: 'MAIN'
+              });
+            } catch (e) {
+              console.warn('Could not inject overlay immediately:', e);
+            }
+          };
+          
+          // Injecter dès que possible
+          setTimeout(injectOverlay, 0);
+          // Aussi injecter quand le tab commence à se charger
+          chrome.tabs.onUpdated.addListener(function onTabUpdate(updatedTabId, changeInfo) {
+            if (updatedTabId === tabId && changeInfo.status === 'loading') {
+              injectOverlay();
+              chrome.tabs.onUpdated.removeListener(onTabUpdate);
+            }
+          });
+
+          // Listen for tab updates to detect when we reach Vault callback
+          const tabUpdateListener = async (updatedTabId, changeInfo, tab) => {
+            if (updatedTabId !== tabId || callbackProcessed) return;
+            
+            // Check if we're on the Vault callback page
+            if (changeInfo.url && changeInfo.url.includes('vault.exem.fr') && 
+                changeInfo.url.includes('/auth/oidc/oidc/callback')) {
+              console.log('Detected Vault callback page:', changeInfo.url);
+              
+              // Injecter immédiatement un script qui cache le contenu AVANT qu'il ne soit rendu
+              try {
+                // Injecter un script qui s'exécute au début du document et cache tout immédiatement
+                await chrome.scripting.executeScript({
+                  target: { tabId: tabId },
+                  func: () => {
+                    // Créer l'overlay immédiatement, même avant que le body n'existe
+                    const overlay = document.createElement('div');
+                    overlay.id = 'vault-auth-overlay';
+                    overlay.style.cssText = `
+                      position: fixed;
+                      top: 0;
+                      left: 0;
+                      width: 100vw;
+                      height: 100vh;
+                      background: linear-gradient(135deg, #290873, #7209B7, #F72585);
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      z-index: 999999;
+                      font-family: Arial, sans-serif;
+                      color: white;
+                      text-align: center;
+                      padding: 20px;
+                    `;
+                    overlay.innerHTML = `
+                      <div>
+                        <div style="font-size: 24px; margin-bottom: 10px; animation: spin 1s linear infinite;">⏳</div>
+                        <p style="font-size: 18px; margin: 0;">Traitement en cours...</p>
+                      </div>
+                      <style>
+                        @keyframes spin {
+                          from { transform: rotate(0deg); }
+                          to { transform: rotate(360deg); }
+                        }
+                      </style>
+                    `;
+                    
+                    // Ajouter l'overlay au document immédiatement
+                    if (document.documentElement) {
+                      document.documentElement.appendChild(overlay);
+                    } else {
+                      // Si documentElement n'existe pas encore, attendre DOMContentLoaded
+                      if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', () => {
+                          document.documentElement.appendChild(overlay);
+                        });
+                      }
+                    }
+                    
+                    // Cacher le body dès qu'il apparaît
+                    const hideBody = () => {
+                      if (document.body) {
+                        document.body.style.visibility = 'hidden';
+                        document.body.style.opacity = '0';
+                        document.body.style.display = 'none';
+                      }
+                    };
+                    
+                    // Essayer immédiatement
+                    hideBody();
+                    
+                    // Utiliser MutationObserver pour cacher tout contenu qui apparaît
+                    const observer = new MutationObserver((mutations) => {
+                      hideBody();
+                      // Cacher aussi tous les éléments qui sont ajoutés
+                      mutations.forEach((mutation) => {
+                        mutation.addedNodes.forEach((node) => {
+                          if (node.nodeType === 1) { // Element node
+                            if (node !== overlay && node.id !== 'vault-auth-overlay') {
+                              node.style.visibility = 'hidden';
+                              node.style.opacity = '0';
+                              node.style.display = 'none';
+                            }
+                          }
+                        });
+                      });
+                    });
+                    
+                    // Observer les changements du document
+                    if (document.documentElement) {
+                      observer.observe(document.documentElement, {
+                        childList: true,
+                        subtree: true
+                      });
+                    }
+                    
+                    // Observer aussi quand le body est créé
+                    if (document.body) {
+                      observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                      });
+                    } else {
+                      // Attendre que le body soit créé
+                      const bodyObserver = new MutationObserver(() => {
+                        if (document.body) {
+                          hideBody();
+                          observer.observe(document.body, {
+                            childList: true,
+                            subtree: true
+                          });
+                          bodyObserver.disconnect();
+                        }
+                      });
+                      bodyObserver.observe(document.documentElement, {
+                        childList: true
+                      });
+                    }
+                  },
+                  world: 'MAIN'
+                });
+              } catch (e) {
+                console.warn('Could not inject hiding script immediately:', e);
+              }
+              
+              // Attendre un peu que le contenu se charge, puis extraire le token
+              setTimeout(async () => {
+                try {
+                  // Inject script that saves content and extracts token
+                  const results = await chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    func: () => {
+                      // Rendre le body visible temporairement pour lire le contenu
+                      if (document.body) {
+                        document.body.style.visibility = 'visible';
+                        document.body.style.opacity = '1';
+                      }
+                      
+                      // Sauvegarder le contenu original
+                      const bodyText = document.body.innerText || document.body.textContent;
+                      
+                      // Re-cacher immédiatement
+                      if (document.body) {
+                        document.body.style.visibility = 'hidden';
+                        document.body.style.opacity = '0';
+                      }
+                      
+                      // Extraire le token depuis le contenu sauvegardé
+                      try {
+                        const data = JSON.parse(bodyText);
+                        return {
+                          success: true,
+                          token: data.auth?.client_token || null,
+                          data: data
+                        };
+                      } catch (e) {
+                        // If not JSON, try to find token in the text
+                        const tokenMatch = bodyText.match(/"client_token"\s*:\s*"([^"]+)"/);
+                        return {
+                          success: !!tokenMatch,
+                          token: tokenMatch ? tokenMatch[1] : null,
+                          rawText: bodyText.substring(0, 500)
+                        };
+                      }
+                    }
+                  });
+
+                  callbackProcessed = true;
+                  chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+
+                  if (!results || !results[0] || !results[0].result) {
+                    // Si on ne peut pas lire le contenu, cacher l'overlay pour afficher le contenu réel
+                    await chrome.scripting.executeScript({
+                      target: { tabId: tabId },
+                      func: () => {
+                        const overlay = document.getElementById('vault-auth-overlay');
+                        if (overlay) {
+                          overlay.style.display = 'none';
+                          overlay.remove();
+                        }
+                        // Restaurer la visibilité du body pour afficher le contenu réel
+                        if (document.body) {
+                          document.body.style.visibility = 'visible';
+                          document.body.style.opacity = '1';
+                          document.body.style.display = '';
+                        }
+                      }
+                    });
+                    
+                    window.handleVaultToken = originalHandleVaultToken;
+                    chrome.windows.remove(popupWindow.id);
+                    reject(new Error('Impossible de lire la réponse de Vault'));
+                    return;
+                  }
+
+                  const result = results[0].result;
+                  console.log('Extracted result:', result);
+
+                  if (!result.success || !result.token) {
+                    // Si ce n'est pas un token valide, cacher l'overlay pour afficher le contenu réel
+                    await chrome.scripting.executeScript({
+                      target: { tabId: tabId },
+                      func: () => {
+                        const overlay = document.getElementById('vault-auth-overlay');
+                        if (overlay) {
+                          overlay.style.display = 'none';
+                          overlay.remove();
+                        }
+                        // Restaurer la visibilité du body pour afficher le contenu réel
+                        if (document.body) {
+                          document.body.style.visibility = 'visible';
+                          document.body.style.opacity = '1';
+                          document.body.style.display = '';
+                        }
+                      }
+                    });
+                    
+                    window.handleVaultToken = originalHandleVaultToken;
+                    chrome.windows.remove(popupWindow.id);
+                    reject(new Error('Token non trouvé dans la réponse Vault'));
+                    return;
+                  }
+
+                  // Afficher un message de succès dans la popup au lieu du token
+                  await chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    func: () => {
+                      // Mettre à jour l'overlay existant ou créer un nouveau
+                      const overlay = document.getElementById('vault-auth-overlay');
+                      if (overlay) {
+                        overlay.innerHTML = `
+                          <div>
+                            <h1 style="font-size: 24px; margin-bottom: 10px;">✓</h1>
+                            <p style="font-size: 18px; margin: 0;">Authentification Google réussie</p>
+                          </div>
+                        `;
+                      } else {
+                        // Si l'overlay n'existe pas, créer le message directement
+                        document.body.innerHTML = `
+                          <div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; background: linear-gradient(135deg, #290873, #7209B7, #F72585); color: white; text-align: center; padding: 20px;">
+                            <div>
+                              <h1 style="font-size: 24px; margin-bottom: 10px;">✓</h1>
+                              <p style="font-size: 18px; margin: 0;">Authentification Google réussie</p>
+                            </div>
+                          </div>
+                        `;
+                      }
+                    }
+                  });
+
+                  // Attendre un peu pour que l'utilisateur voie le message
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+
+                  // Close the popup
+                  chrome.windows.remove(popupWindow.id);
+
+                  // Process the token via handleVaultToken (qui va sauvegarder et résoudre la Promise)
+                  await window.handleVaultToken(result.token);
+                } catch (e) {
+                  callbackProcessed = true;
+                  chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+                  window.handleVaultToken = originalHandleVaultToken;
+                  console.error('Error extracting token:', e);
+                  chrome.windows.remove(popupWindow.id);
+                  reject(new Error('Erreur: ' + e.message));
+                }
+              }, 1000); // Wait 1 second for page to fully load
+            }
+          };
+
+          chrome.tabs.onUpdated.addListener(tabUpdateListener);
+
+          // Cleanup after 5 minutes
+          setTimeout(() => {
+            if (!callbackProcessed) {
+              chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+              chrome.windows.remove(popupWindow.id).catch(() => {});
+              if (!tokenResolved) {
+                window.handleVaultToken = originalHandleVaultToken;
+                reject(new Error('Timeout: La régénération du token a pris trop de temps'));
+              }
+            }
+          }, 5 * 60 * 1000);
+        });
+      } catch (error) {
+        window.handleVaultToken = originalHandleVaultToken;
+        console.error('OIDC auth error:', error);
+        reject(error);
+      }
+    })();
+  });
+}
 
 // Fonction pour récupérer l'entity_name depuis le token
 async function getEntityNameFromToken(vaultUrl, token) {
@@ -216,6 +879,104 @@ async function openGoogleSignIn() {
 
       const tabId = popupWindow.tabs[0].id;
       let callbackProcessed = false;
+      
+      // Injecter l'overlay IMMÉDIATEMENT dès que la popup est créée
+      const injectOverlay = async () => {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: () => {
+              // Créer l'overlay immédiatement
+              if (!document.getElementById('vault-auth-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.id = 'vault-auth-overlay';
+                overlay.style.cssText = `
+                  position: fixed;
+                  top: 0;
+                  left: 0;
+                  width: 100vw;
+                  height: 100vh;
+                  background: linear-gradient(135deg, #290873, #7209B7, #F72585);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  z-index: 999999;
+                  font-family: Arial, sans-serif;
+                  color: white;
+                  text-align: center;
+                  padding: 20px;
+                `;
+                overlay.innerHTML = `
+                  <div>
+                    <div style="font-size: 24px; margin-bottom: 10px; animation: spin 1s linear infinite;">⏳</div>
+                    <p style="font-size: 18px; margin: 0;">Traitement en cours...</p>
+                  </div>
+                  <style>
+                    @keyframes spin {
+                      from { transform: rotate(0deg); }
+                      to { transform: rotate(360deg); }
+                    }
+                  </style>
+                `;
+                
+                // Ajouter au document dès que possible
+                const addOverlay = () => {
+                  if (document.documentElement) {
+                    document.documentElement.appendChild(overlay);
+                  } else if (document.body) {
+                    document.body.appendChild(overlay);
+                  } else {
+                    // Attendre que le document soit prêt
+                    if (document.readyState === 'loading') {
+                      document.addEventListener('DOMContentLoaded', addOverlay);
+                    } else {
+                      setTimeout(addOverlay, 0);
+                    }
+                  }
+                };
+                addOverlay();
+                
+                // Cacher tout contenu qui apparaît
+                const hideContent = () => {
+                  if (document.body) {
+                    document.body.style.visibility = 'hidden';
+                    document.body.style.opacity = '0';
+                    document.body.style.display = 'none';
+                  }
+                };
+                
+                // Observer les changements
+                const observer = new MutationObserver(() => {
+                  hideContent();
+                });
+                
+                if (document.documentElement) {
+                  observer.observe(document.documentElement, {
+                    childList: true,
+                    subtree: true
+                  });
+                }
+                
+                // Cacher immédiatement si le body existe déjà
+                hideContent();
+              }
+            },
+            world: 'MAIN'
+          });
+        } catch (e) {
+          console.warn('Could not inject overlay immediately:', e);
+        }
+      };
+      
+      // Injecter dès que possible
+      setTimeout(injectOverlay, 0);
+      // Aussi injecter quand le tab commence à se charger
+      chrome.tabs.onUpdated.addListener(function onTabUpdate(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === 'loading') {
+          injectOverlay();
+          chrome.tabs.onUpdated.removeListener(onTabUpdate);
+        }
+      });
 
       // Listen for tab updates to detect when we reach Vault callback
       const tabUpdateListener = async (updatedTabId, changeInfo, tab) => {
@@ -226,19 +987,145 @@ async function openGoogleSignIn() {
             changeInfo.url.includes('/auth/oidc/oidc/callback')) {
           console.log('Detected Vault callback page:', changeInfo.url);
           
-          // Wait a moment for the page to load
+          // Injecter immédiatement un script qui cache le contenu AVANT qu'il ne soit rendu
+          try {
+            // Injecter un script qui s'exécute au début du document et cache tout immédiatement
+            await chrome.scripting.executeScript({
+              target: { tabId: tabId },
+              func: () => {
+                // Créer l'overlay immédiatement, même avant que le body n'existe
+                const overlay = document.createElement('div');
+                overlay.id = 'vault-auth-overlay';
+                overlay.style.cssText = `
+                  position: fixed;
+                  top: 0;
+                  left: 0;
+                  width: 100vw;
+                  height: 100vh;
+                  background: linear-gradient(135deg, #290873, #7209B7, #F72585);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  z-index: 999999;
+                  font-family: Arial, sans-serif;
+                  color: white;
+                  text-align: center;
+                  padding: 20px;
+                `;
+                overlay.innerHTML = `
+                  <div>
+                    <div style="font-size: 24px; margin-bottom: 10px; animation: spin 1s linear infinite;">⏳</div>
+                    <p style="font-size: 18px; margin: 0;">Traitement en cours...</p>
+                  </div>
+                  <style>
+                    @keyframes spin {
+                      from { transform: rotate(0deg); }
+                      to { transform: rotate(360deg); }
+                    }
+                  </style>
+                `;
+                
+                // Ajouter l'overlay au document immédiatement
+                if (document.documentElement) {
+                  document.documentElement.appendChild(overlay);
+                } else {
+                  // Si documentElement n'existe pas encore, attendre DOMContentLoaded
+                  if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', () => {
+                      document.documentElement.appendChild(overlay);
+                    });
+                  }
+                }
+                
+                // Cacher le body dès qu'il apparaît
+                const hideBody = () => {
+                  if (document.body) {
+                    document.body.style.visibility = 'hidden';
+                    document.body.style.opacity = '0';
+                    document.body.style.display = 'none';
+                  }
+                };
+                
+                // Essayer immédiatement
+                hideBody();
+                
+                // Utiliser MutationObserver pour cacher tout contenu qui apparaît
+                const observer = new MutationObserver((mutations) => {
+                  hideBody();
+                  // Cacher aussi tous les éléments qui sont ajoutés
+                  mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                      if (node.nodeType === 1) { // Element node
+                        if (node !== overlay && node.id !== 'vault-auth-overlay') {
+                          node.style.visibility = 'hidden';
+                          node.style.opacity = '0';
+                          node.style.display = 'none';
+                        }
+                      }
+                    });
+                  });
+                });
+                
+                // Observer les changements du document
+                if (document.documentElement) {
+                  observer.observe(document.documentElement, {
+                    childList: true,
+                    subtree: true
+                  });
+                }
+                
+                // Observer aussi quand le body est créé
+                if (document.body) {
+                  observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                  });
+                } else {
+                  // Attendre que le body soit créé
+                  const bodyObserver = new MutationObserver(() => {
+                    if (document.body) {
+                      hideBody();
+                      observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                      });
+                      bodyObserver.disconnect();
+                    }
+                  });
+                  bodyObserver.observe(document.documentElement, {
+                    childList: true
+                  });
+                }
+              },
+              world: 'MAIN'
+            });
+          } catch (e) {
+            console.warn('Could not inject hiding script immediately:', e);
+          }
+          
+          // Attendre un peu que le contenu se charge, puis extraire le token
           setTimeout(async () => {
             try {
-              // Inject script to extract token from the page
+              // Inject script that saves content and extracts token
               const results = await chrome.scripting.executeScript({
                 target: { tabId: tabId },
                 func: () => {
-                  // Try to extract token from the page body
-                  const bodyText = document.body.innerText || document.body.textContent;
-
-                  console.log(bodyText);
+                  // Rendre le body visible temporairement pour lire le contenu
+                  if (document.body) {
+                    document.body.style.visibility = 'visible';
+                    document.body.style.opacity = '1';
+                  }
                   
-                  // Vault typically returns JSON with the token
+                  // Sauvegarder le contenu original
+                  const bodyText = document.body.innerText || document.body.textContent;
+                  
+                  // Re-cacher immédiatement
+                  if (document.body) {
+                    document.body.style.visibility = 'hidden';
+                    document.body.style.opacity = '0';
+                  }
+                  
+                  // Extraire le token depuis le contenu sauvegardé
                   try {
                     const data = JSON.parse(bodyText);
                     return {
@@ -262,6 +1149,24 @@ async function openGoogleSignIn() {
               chrome.tabs.onUpdated.removeListener(tabUpdateListener);
 
               if (!results || !results[0] || !results[0].result) {
+                // Si on ne peut pas lire le contenu, cacher l'overlay pour afficher le contenu réel
+                await chrome.scripting.executeScript({
+                  target: { tabId: tabId },
+                  func: () => {
+                    const overlay = document.getElementById('vault-auth-overlay');
+                    if (overlay) {
+                      overlay.style.display = 'none';
+                      overlay.remove();
+                    }
+                    // Restaurer la visibilité du body pour afficher le contenu réel
+                    if (document.body) {
+                      document.body.style.visibility = 'visible';
+                      document.body.style.opacity = '1';
+                      document.body.style.display = '';
+                    }
+                  }
+                });
+                
                 setupError.textContent = 'Erreur: Impossible de lire la réponse de Vault';
                 setupError.style.display = 'block';
                 chrome.windows.remove(popupWindow.id);
@@ -272,12 +1177,60 @@ async function openGoogleSignIn() {
               console.log('Extracted result:', result);
 
               if (!result.success || !result.token) {
+                // Si ce n'est pas un token valide, cacher l'overlay pour afficher le contenu réel
+                await chrome.scripting.executeScript({
+                  target: { tabId: tabId },
+                  func: () => {
+                    const overlay = document.getElementById('vault-auth-overlay');
+                    if (overlay) {
+                      overlay.style.display = 'none';
+                      overlay.remove();
+                    }
+                    // Restaurer la visibilité du body pour afficher le contenu réel
+                    if (document.body) {
+                      document.body.style.visibility = 'visible';
+                      document.body.style.opacity = '1';
+                      document.body.style.display = '';
+                    }
+                  }
+                });
+                
                 setupError.textContent = 'Erreur: Token non trouvé dans la réponse Vault';
                 setupError.style.display = 'block';
                 console.error('Vault response:', result);
                 chrome.windows.remove(popupWindow.id);
                 return;
               }
+
+              // Afficher un message de succès dans la popup au lieu du token
+              await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                  // Mettre à jour l'overlay existant ou créer un nouveau
+                  const overlay = document.getElementById('vault-auth-overlay');
+                  if (overlay) {
+                    overlay.innerHTML = `
+                      <div>
+                        <h1 style="font-size: 24px; margin-bottom: 10px;">✓</h1>
+                        <p style="font-size: 18px; margin: 0;">Authentification Google réussie</p>
+                      </div>
+                    `;
+                  } else {
+                    // Si l'overlay n'existe pas, créer le message directement
+                    document.body.innerHTML = `
+                      <div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; background: linear-gradient(135deg, #290873, #7209B7, #F72585); color: white; text-align: center; padding: 20px;">
+                        <div>
+                          <h1 style="font-size: 24px; margin-bottom: 10px;">✓</h1>
+                          <p style="font-size: 18px; margin: 0;">Authentification Google réussie</p>
+                        </div>
+                      </div>
+                    `;
+                  }
+                }
+              });
+
+              // Attendre un peu pour que l'utilisateur voie le message
+              await new Promise(resolve => setTimeout(resolve, 1500));
 
               // Close the popup
               chrome.windows.remove(popupWindow.id);
@@ -517,7 +1470,7 @@ async function authenticate(pin) {
   try {
     // Récupérer les données stockées
     const stored = await new Promise((resolve) => {
-      chrome.storage.local.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount'], resolve);
+      chrome.storage.local.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount', 'tokenExpireTime'], resolve);
     });
 
     if (!stored.encryptedToken || !stored.pinHash) {
@@ -533,9 +1486,23 @@ async function authenticate(pin) {
     }
 
     // Déchiffrer le token
-    const decryptedToken = await window.cryptoUtils.decrypt(stored.encryptedToken, pin);
+    let decryptedToken = await window.cryptoUtils.decrypt(stored.encryptedToken, pin);
 
-    // Vérifier que le token est valide
+    // Vérifier si le token est encore valide (en vérifiant la date d'expiration sauvegardée)
+    // Note: Si tokenExpireTime n'existe pas encore (première connexion), on ne fait pas cette vérification
+    const now = Math.floor(Date.now() / 1000);
+    let tokenNeedsRegeneration = false;
+    
+    if (stored.tokenExpireTime) {
+      // Si la date d'expiration est passée, le token doit être régénéré
+      if (stored.tokenExpireTime <= now) {
+        tokenNeedsRegeneration = true;
+        console.log('Token expiré selon la date sauvegardée, régénération nécessaire');
+      }
+    }
+    // Si tokenExpireTime n'existe pas, on continue la vérification via l'API Vault
+
+    // Vérifier que le token est valide via l'API Vault
     const testResponse = await fetch(`${stored.vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
       method: 'GET',
       headers: {
@@ -545,7 +1512,40 @@ async function authenticate(pin) {
     });
 
     if (!testResponse.ok) {
-      throw new Error('Token invalide. Veuillez reconfigurer l\'extension.');
+      // Token invalide selon l'API, régénération nécessaire
+      tokenNeedsRegeneration = true;
+      console.log('Token invalide selon l\'API, régénération nécessaire');
+    }
+    // Si testResponse.ok est vrai, le token est valide selon Vault
+    // On fait confiance à cette réponse et on ne fait pas de double vérification
+
+    // Si le token doit être régénéré, déclencher le processus automatiquement
+    if (tokenNeedsRegeneration) {
+      console.log('Token expiré, régénération automatique en cours...');
+      showToast('Token expiré. Régénération automatique en cours...', 'info');
+      
+      try {
+        // Régénérer le token automatiquement via OIDC
+        const newToken = await regenerateTokenAndSave(stored.vaultUrl || 'https://vault.exem.fr/', pin);
+        
+        // Utiliser le nouveau token pour continuer l'authentification
+        decryptedToken = newToken;
+      } catch (error) {
+        console.error('Erreur lors de la régénération automatique:', error);
+        showToast('Erreur lors de la régénération. Veuillez vous reconnecter manuellement.', 'error');
+        hideAuthModal();
+        showSetupModal();
+        throw new Error('Impossible de régénérer le token automatiquement. Veuillez vous reconnecter.');
+      }
+    }
+
+    // Récupérer les métadonnées du token pour mettre à jour le TTL si nécessaire
+    const tokenMetadata = await getTokenMetadata(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken);
+    if (tokenMetadata && tokenMetadata.expireTime) {
+      // Mettre à jour la date d'expiration dans le storage
+      await new Promise((resolve) => {
+        chrome.storage.local.set({ tokenExpireTime: tokenMetadata.expireTime }, resolve);
+      });
     }
 
     // Récupérer l'entity_name si kvMount n'est pas défini
@@ -1198,6 +2198,9 @@ createPinBtn.addEventListener('click', async () => {
   createPinError.style.display = 'none';
 
   try {
+    // Récupérer les métadonnées du token (TTL, date d'expiration)
+    const tokenMetadata = await getTokenMetadata(settings.vaultUrl || 'https://vault.exem.fr/', pendingToken);
+    
     // Hasher le PIN en SHA256
     const pinHash = await window.cryptoUtils.sha256(pin);
 
@@ -1211,14 +2214,30 @@ createPinBtn.addEventListener('click', async () => {
     // Déterminer le kvMount à utiliser
     const kvMount = pendingDisplayName || settings.kvMount;
     
+    // Préparer les données à sauvegarder
+    const dataToSave = {
+      vaultUrl: settings.vaultUrl || 'https://vault.exem.fr/',
+      kvMount: kvMount,
+      encryptedToken: encryptedToken,
+      pinHash: pinHash
+    };
+    
+    // Ajouter les métadonnées du token si disponibles
+    if (tokenMetadata) {
+      if (tokenMetadata.expireTime) {
+        dataToSave.tokenExpireTime = tokenMetadata.expireTime;
+      }
+      if (tokenMetadata.ttl) {
+        dataToSave.tokenTtl = tokenMetadata.ttl;
+      }
+      if (tokenMetadata.creationTime) {
+        dataToSave.tokenCreationTime = tokenMetadata.creationTime;
+      }
+    }
+    
     // Sauvegarder dans chrome.storage.local
     await new Promise((resolve) => {
-      chrome.storage.local.set({
-        vaultUrl: settings.vaultUrl || 'https://vault.exem.fr/',
-        kvMount: kvMount,
-        encryptedToken: encryptedToken,
-        pinHash: pinHash
-      }, resolve);
+      chrome.storage.local.set(dataToSave, resolve);
     });
 
     hideCreatePinModal();

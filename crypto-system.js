@@ -271,26 +271,29 @@ async function decryptSecret(encryptedSecret, pin, context) {
 }
 
 /**
- * Initialise le système de chiffrement (génère et stocke la master key)
+ * Initialise le système de chiffrement (génère ou réutilise la master key)
+ * Si une Master Key existe déjà, elle est réutilisée au lieu d'en créer une nouvelle
  * @param {string} pin - le PIN à 4 chiffres
  * @returns {Promise<void>}
  */
 async function initializeCryptoSystem(pin) {
   // Vérifier si une master key existe déjà
   if (await hasMasterKey()) {
-    console.warn('Master key already exists, skipping initialization');
+    console.log('✅ Master Key existante détectée - réutilisation au lieu d\'en créer une nouvelle');
+    console.log('ℹ️  La Master Key existante reste chiffrée et peut être utilisée pour déchiffrer vos secrets');
     return;
   }
   
   // Générer une nouvelle master key
+  console.log('🔑 Aucune Master Key détectée - génération d\'une nouvelle Master Key...');
   const masterKey = generateMasterKey(32);
   
-  console.log('Master key generated (length:', masterKey.length, 'bytes)');
+  console.log('✅ Master Key générée (longueur:', masterKey.length, 'bytes)');
   
   // Stocker la master key chiffrée par le PIN
   await storeMasterKey(masterKey, pin);
   
-  console.log('Master key stored successfully');
+  console.log('✅ Master Key stockée avec succès et chiffrée avec votre PIN');
 }
 
 /**
