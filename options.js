@@ -22,10 +22,34 @@ const pinPromptTitle = document.getElementById('pinPromptTitle');
 const pinPromptMessage = document.getElementById('pinPromptMessage');
 const syncEnabledCheckbox = document.getElementById('syncEnabledCheckbox');
 const syncStatus = document.getElementById('syncStatus');
+const exportCategoriesBtn = document.getElementById('exportCategoriesBtn');
+const importCategoriesBtn = document.getElementById('importCategoriesBtn');
+const importCategoriesFile = document.getElementById('importCategoriesFile');
+const categoriesStatus = document.getElementById('categoriesStatus');
+const passwordModal = document.getElementById('passwordModal');
+const passwordInput = document.getElementById('passwordInput');
+const passwordConfirm = document.getElementById('passwordConfirm');
+const passwordSaveBtn = document.getElementById('passwordSaveBtn');
+const passwordCancelBtn = document.getElementById('passwordCancelBtn');
+const passwordError = document.getElementById('passwordError');
+const togglePasswordInput = document.getElementById('togglePasswordInput');
+const togglePasswordConfirm = document.getElementById('togglePasswordConfirm');
+const passwordPromptModal = document.getElementById('passwordPromptModal');
+const passwordPromptInput = document.getElementById('passwordPromptInput');
+const passwordPromptOkBtn = document.getElementById('passwordPromptOkBtn');
+const passwordPromptCancelBtn = document.getElementById('passwordPromptCancelBtn');
+const passwordPromptError = document.getElementById('passwordPromptError');
+const passwordPromptTitle = document.getElementById('passwordPromptTitle');
+const passwordPromptMessage = document.getElementById('passwordPromptMessage');
+const togglePasswordPromptInput = document.getElementById('togglePasswordPromptInput');
 const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.googleusercontent.com";
 
 // Variables pour le modal PIN prompt
 let pinPromptResolve = null;
+
+// Variables pour le modal mot de passe
+let passwordResolve = null;
+let passwordPromptResolve = null;
 
 // Limiter les inputs PIN à 4 chiffres
 pinInput.addEventListener('input', (e) => {
@@ -660,9 +684,25 @@ pinSaveBtn.addEventListener('click', async () => {
     // Chiffrer le token
     const encryptedToken = await window.cryptoUtils.encrypt(vaultToken, pin);
     
-    // Initialiser le système de chiffrement (générer la master key)
-    await window.cryptoSystem.initializeCryptoSystem(pin);
-    console.log('Système de chiffrement initialisé avec succès');
+    // Demander le mot de passe Master Key si le système n'est pas encore initialisé
+    let masterPassword = null;
+    if (!(await window.cryptoSystem.hasMasterKey())) {
+      hidePinModal();
+      masterPassword = await promptForPassword();
+      if (!masterPassword) {
+        // L'utilisateur a annulé, ne pas sauvegarder
+        return;
+      }
+    }
+    
+    // Initialiser le système de chiffrement (dériver la master key depuis le mot de passe)
+    if (masterPassword) {
+      // Utiliser le kvMount comme userId pour générer un sel déterministe
+      await window.cryptoSystem.initializeCryptoSystem(masterPassword, pin, kvMount);
+      console.log('Système de chiffrement initialisé avec succès');
+    } else {
+      console.log('Système de chiffrement déjà initialisé');
+    }
     
     // Préparer les données à sauvegarder
     const dataToSave = {
@@ -701,6 +741,158 @@ pinSaveBtn.addEventListener('click', async () => {
 
 pinCancelBtn.addEventListener('click', () => {
   hidePinModal();
+});
+
+// ============================================================
+// GESTION DU MODAL MOT DE PASSE MASTER KEY
+// ============================================================
+
+// Afficher le modal de création de mot de passe
+function showPasswordModal() {
+  passwordModal.classList.add('show');
+  passwordInput.value = '';
+  passwordConfirm.value = '';
+  passwordError.style.display = 'none';
+  passwordInput.focus();
+}
+
+// Cacher le modal de mot de passe
+function hidePasswordModal() {
+  passwordModal.classList.remove('show');
+}
+
+// Toggle visibilité des mots de passe
+if (togglePasswordInput) {
+  togglePasswordInput.addEventListener('click', () => {
+    const input = passwordInput;
+    if (input.type === 'password') {
+      input.type = 'text';
+      togglePasswordInput.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      togglePasswordInput.title = 'Masquer le mot de passe';
+    } else {
+      input.type = 'password';
+      togglePasswordInput.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      togglePasswordInput.title = 'Afficher le mot de passe';
+    }
+  });
+}
+
+if (togglePasswordConfirm) {
+  togglePasswordConfirm.addEventListener('click', () => {
+    const input = passwordConfirm;
+    if (input.type === 'password') {
+      input.type = 'text';
+      togglePasswordConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      togglePasswordConfirm.title = 'Masquer le mot de passe';
+    } else {
+      input.type = 'password';
+      togglePasswordConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      togglePasswordConfirm.title = 'Afficher le mot de passe';
+    }
+  });
+}
+
+// Fonction pour demander le mot de passe via un modal
+function promptForPassword() {
+  return new Promise((resolve) => {
+    passwordInput.value = '';
+    passwordConfirm.value = '';
+    passwordError.style.display = 'none';
+    passwordModal.classList.add('show');
+    passwordInput.focus();
+    
+    passwordResolve = resolve;
+  });
+}
+
+// Gestionnaire pour sauvegarder le mot de passe
+passwordSaveBtn.addEventListener('click', async () => {
+  const password = passwordInput.value;
+  const passwordConfirmValue = passwordConfirm.value;
+  
+  // Validation du mot de passe
+  if (password.length < 12) {
+    passwordError.textContent = 'Le mot de passe doit contenir au moins 12 caractères';
+    passwordError.style.display = 'block';
+    return;
+  }
+  
+  if (password !== passwordConfirmValue) {
+    passwordError.textContent = 'Les mots de passe ne correspondent pas';
+    passwordError.style.display = 'block';
+    return;
+  }
+  
+  passwordError.style.display = 'none';
+  hidePasswordModal();
+  
+  if (passwordResolve) {
+    passwordResolve(password);
+    passwordResolve = null;
+  }
+});
+
+passwordCancelBtn.addEventListener('click', () => {
+  hidePasswordModal();
+  if (passwordResolve) {
+    passwordResolve(null);
+    passwordResolve = null;
+  }
+});
+
+// Toggle visibilité du mot de passe dans le prompt
+if (togglePasswordPromptInput) {
+  togglePasswordPromptInput.addEventListener('click', () => {
+    const input = passwordPromptInput;
+    if (input.type === 'password') {
+      input.type = 'text';
+      togglePasswordPromptInput.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      togglePasswordPromptInput.title = 'Masquer le mot de passe';
+    } else {
+      input.type = 'password';
+      togglePasswordPromptInput.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      togglePasswordPromptInput.title = 'Afficher le mot de passe';
+    }
+  });
+}
+
+// Fonction pour demander le mot de passe Master Key via un modal
+function promptForMasterPassword(title, message) {
+  return new Promise((resolve) => {
+    passwordPromptTitle.textContent = title || 'Mot de passe Master Key requis';
+    passwordPromptMessage.textContent = message || 'Entrez votre mot de passe Master Key';
+    passwordPromptInput.value = '';
+    passwordPromptError.style.display = 'none';
+    passwordPromptModal.classList.add('show');
+    passwordPromptInput.focus();
+    
+    passwordPromptResolve = resolve;
+  });
+}
+
+// Gestionnaires du modal password prompt
+passwordPromptOkBtn.addEventListener('click', async () => {
+  const password = passwordPromptInput.value;
+  
+  if (!password || password.length < 12) {
+    passwordPromptError.textContent = 'Le mot de passe doit contenir au moins 12 caractères';
+    passwordPromptError.style.display = 'block';
+    return;
+  }
+  
+  passwordPromptModal.classList.remove('show');
+  if (passwordPromptResolve) {
+    passwordPromptResolve(password);
+    passwordPromptResolve = null;
+  }
+});
+
+passwordPromptCancelBtn.addEventListener('click', () => {
+  passwordPromptModal.classList.remove('show');
+  if (passwordPromptResolve) {
+    passwordPromptResolve(null);
+    passwordPromptResolve = null;
+  }
 });
 
 saveBtn.addEventListener('click', async () => {
@@ -829,10 +1021,10 @@ loadSettings();
 async function updateMasterKeyStatus() {
   const hasMK = await window.cryptoSystem.hasMasterKey();
   if (hasMK) {
-    masterKeyStatus.innerHTML = '✅ <strong>Master Key présente</strong> - Vous pouvez l\'exporter pour backup';
+    masterKeyStatus.innerHTML = '✅ <strong>Mot de passe Master Key configuré</strong> - Vous pouvez l\'exporter pour backup';
     masterKeyStatus.style.color = '#059669';
   } else {
-    masterKeyStatus.innerHTML = '⚠️ <strong>Aucune Master Key</strong> - Créez-en une ou importez-en une';
+    masterKeyStatus.innerHTML = '⚠️ <strong>Aucun mot de passe Master Key</strong> - Créez-en un ou importez-en un';
     masterKeyStatus.style.color = '#d97706';
   }
 }
@@ -1044,40 +1236,60 @@ pinPromptCancelBtn.addEventListener('click', () => {
   }
 });
 
-// Export Master Key
+// Export Master Key (mot de passe)
 exportMasterKeyBtn.addEventListener('click', async () => {
   try {
     // Vérifier si une Master Key existe
     const hasMK = await window.cryptoSystem.hasMasterKey();
     if (!hasMK) {
-      alert('Aucune Master Key à exporter. Créez-en une d\'abord en configurant l\'extension.');
+      alert('Aucun mot de passe Master Key à exporter. Créez-en un d\'abord en configurant l\'extension.');
       return;
     }
     
-    // Demander le PIN
+    // Demander le mot de passe Master Key
+    const masterPassword = await promptForMasterPassword(
+      '🔐 Export du Mot de passe Master Key',
+      'Entrez votre mot de passe Master Key pour l\'exporter'
+    );
+    
+    if (!masterPassword) {
+      return; // Annulé
+    }
+    
+    // Vérifier que le mot de passe est correct en dérivant la clé
+    const salt = await window.cryptoSystem.getMasterKeySalt();
+    if (!salt) {
+      throw new Error('Aucun sel trouvé. Le système n\'utilise peut-être pas encore de mot de passe.');
+    }
+    
+    // Dériver la master key depuis le mot de passe pour vérification
+    const { key: derivedKey } = await window.cryptoSystem.deriveMasterKeyFromPassword(masterPassword, salt);
+    
+    // Demander le PIN pour comparer avec la master key stockée
     const pin = await promptForPin(
-      '🔐 Export de la Master Key',
-      'Entrez votre PIN pour déverrouiller la Master Key'
+      '🔐 Export du Mot de passe Master Key',
+      'Entrez votre PIN pour vérifier'
     );
     
     if (!pin) {
       return; // Annulé
     }
     
-    // Charger la Master Key
-    const masterKey = await window.cryptoSystem.loadMasterKey(pin);
+    // Charger la Master Key stockée
+    const storedMasterKey = await window.cryptoSystem.loadMasterKey(pin);
     
-    // Convertir en hexadécimal
-    const masterKeyHex = Array.from(masterKey)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
+    // Vérifier que le mot de passe est correct
+    if (!arraysEqual(derivedKey, storedMasterKey)) {
+      alert('❌ Mot de passe Master Key incorrect');
+      return;
+    }
     
     // Créer le contenu du fichier avec métadonnées
     const exportData = {
-      version: '1.1',
-      type: 'vault-password-manager-master-key',
+      version: '2.0',
+      type: 'vault-password-manager-master-password',
       exportDate: new Date().toISOString(),
-      masterKey: masterKeyHex,
+      masterPassword: masterPassword,
       warning: 'HAUTEMENT CONFIDENTIEL - Ne partagez jamais ce fichier'
     };
     
@@ -1088,13 +1300,13 @@ exportMasterKeyBtn.addEventListener('click', async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vault-master-key-${Date.now()}.txt`;
+    a.download = `vault-master-password-${Date.now()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    alert('✅ Master Key exportée avec succès!\n\n⚠️ IMPORTANT : Stockez ce fichier dans un endroit sûr et ne le partagez jamais.');
+    alert('✅ Mot de passe Master Key exporté avec succès!\n\n⚠️ IMPORTANT : Stockez ce fichier dans un endroit sûr et ne le partagez jamais.');
     
   } catch (error) {
     console.error('Erreur lors de l\'export:', error);
@@ -1102,7 +1314,16 @@ exportMasterKeyBtn.addEventListener('click', async () => {
   }
 });
 
-// Import Master Key
+// Fonction helper pour comparer deux Uint8Array
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+// Import Master Key (mot de passe)
 importMasterKeyBtn.addEventListener('click', () => {
   importMasterKeyFile.click();
 });
@@ -1123,60 +1344,62 @@ importMasterKeyFile.addEventListener('change', async (e) => {
       return;
     }
     
-    // Vérifier le format
-    if (!importData.masterKey || importData.type !== 'vault-password-manager-master-key') {
-      alert('❌ Ce fichier ne contient pas une Master Key valide.');
+    // Vérifier le format (support ancien et nouveau format)
+    let masterPassword = null;
+    if (importData.type === 'vault-password-manager-master-password' && importData.masterPassword) {
+      // Nouveau format : mot de passe
+      masterPassword = importData.masterPassword;
+    } else if (importData.type === 'vault-password-manager-master-key' && importData.masterKey) {
+      // Ancien format : master key hex (non supporté pour le nouveau système)
+      alert('❌ Ce fichier contient une ancienne Master Key générée automatiquement.\n\nLe nouveau système utilise un mot de passe utilisateur. Veuillez créer un nouveau mot de passe.');
+      importMasterKeyFile.value = '';
+      return;
+    } else {
+      alert('❌ Ce fichier ne contient pas un mot de passe Master Key valide.');
+      importMasterKeyFile.value = '';
+      return;
+    }
+    
+    // Validation du mot de passe
+    if (!masterPassword || masterPassword.length < 12) {
+      alert('❌ Le mot de passe doit contenir au moins 12 caractères.');
+      importMasterKeyFile.value = '';
       return;
     }
     
     // Confirmation
-    const confirmMsg = `⚠️ ATTENTION ⚠️\n\nVous êtes sur le point d'importer une Master Key.\n\n` +
+    const confirmMsg = `⚠️ ATTENTION ⚠️\n\nVous êtes sur le point d'importer un mot de passe Master Key.\n\n` +
       `Cela va :\n` +
-      `• Remplacer votre Master Key actuelle (si elle existe)\n` +
-      `• Vous permettre de déchiffrer les secrets créés avec cette Master Key\n` +
-      `• Rendre inaccessibles les secrets créés avec l'ancienne Master Key\n\n` +
-      `Fichier exporté le : ${new Date(importData.exportDate).toLocaleString()}\n\n` +
+      `• Remplacer votre mot de passe Master Key actuel (si il existe)\n` +
+      `• Dériver une nouvelle Master Key depuis ce mot de passe\n` +
+      `• Vous permettre de déchiffrer les secrets créés avec ce mot de passe\n` +
+      `• Rendre inaccessibles les secrets créés avec l'ancien mot de passe\n\n` +
+      `Fichier exporté le : ${importData.exportDate ? new Date(importData.exportDate).toLocaleString() : 'date inconnue'}\n\n` +
       `Êtes-vous sûr de vouloir continuer ?`;
     
     if (!confirm(confirmMsg)) {
+      importMasterKeyFile.value = '';
       return;
     }
     
     // Demander le PIN
     const pin = await promptForPin(
-      '🔐 Import de la Master Key',
-      'Entrez votre PIN pour chiffrer la nouvelle Master Key'
+      '🔐 Import du Mot de passe Master Key',
+      'Entrez votre PIN pour chiffrer la Master Key dérivée'
     );
     
     if (!pin) {
+      importMasterKeyFile.value = '';
       return; // Annulé
     }
     
-    // Convertir hex en Uint8Array
-    const masterKeyHex = importData.masterKey;
-    const masterKey = new Uint8Array(
-      masterKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-    );
+    // Dériver la master key depuis le mot de passe
+    const { key: masterKey, salt } = await window.cryptoSystem.deriveMasterKeyFromPassword(masterPassword);
     
-    if (masterKey.length !== 32) {
-      alert('❌ Taille de Master Key invalide. Elle doit faire 32 bytes (256 bits).');
-      return;
-    }
+    // Stocker la master key (avec le sel)
+    await window.cryptoSystem.storeMasterKey(masterKey, pin, salt);
     
-    // Convertir en hex pour le stockage
-    const masterKeyHexForStorage = Array.from(masterKey)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    
-    // Chiffrer la master key avec le PIN
-    const encryptedMasterKey = await window.cryptoUtils.encrypt(masterKeyHexForStorage, pin);
-    
-    // Stocker dans chrome.storage.local
-    await new Promise((resolve) => {
-      chrome.storage.local.set({ encryptedMasterKey }, resolve);
-    });
-    
-    alert('✅ Master Key importée avec succès!\n\nVous pouvez maintenant déchiffrer les secrets créés avec cette Master Key.');
+    alert('✅ Mot de passe Master Key importé avec succès!\n\nVous pouvez maintenant déchiffrer les secrets créés avec ce mot de passe.');
     
     // Mettre à jour le statut
     await updateMasterKeyStatus();
@@ -1189,4 +1412,387 @@ importMasterKeyFile.addEventListener('change', async (e) => {
     alert('❌ Erreur lors de l\'import: ' + error.message);
     importMasterKeyFile.value = '';
   }
+});
+
+// ============================================================
+// IMPORT/EXPORT DES CATÉGORIES ET SECRETS
+// ============================================================
+
+// Variables pour l'authentification dans options.js
+let optionsVaultUrl = null;
+let optionsKvMount = null;
+let optionsVaultToken = null;
+let optionsPin = null;
+
+// Fonction pour authentifier l'utilisateur dans options.js
+async function authenticateForOptions(pin) {
+  try {
+    const stored = await new Promise((resolve) => {
+      chrome.storage.local.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount'], resolve);
+    });
+
+    if (!stored.encryptedToken || !stored.pinHash) {
+      throw new Error('Configuration incomplète. Veuillez configurer l\'extension d\'abord.');
+    }
+
+    const pinHash = await window.cryptoUtils.sha256(pin);
+    if (pinHash !== stored.pinHash) {
+      throw new Error('Code incorrect');
+    }
+
+    const decryptedToken = await window.cryptoUtils.decrypt(stored.encryptedToken, pin);
+    
+    // Vérifier que le token est valide
+    const testResponse = await fetch(`${stored.vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+      method: 'GET',
+      headers: {
+        'X-Vault-Token': decryptedToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!testResponse.ok) {
+      throw new Error('Token invalide. Veuillez vous reconnecter.');
+    }
+
+    optionsVaultUrl = stored.vaultUrl || 'https://vault.exem.fr/';
+    optionsKvMount = stored.kvMount || '';
+    optionsVaultToken = decryptedToken;
+    optionsPin = pin;
+
+    return true;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Fonction helper pour les appels Vault dans options.js
+function vaultFetchOptions(path, opts = {}) {
+  if (!optionsVaultUrl || !optionsVaultToken) {
+    return Promise.reject(new Error('Vault non authentifié'));
+  }
+  const headers = opts.headers || {};
+  headers['X-Vault-Token'] = optionsVaultToken;
+  headers['Content-Type'] = 'application/json';
+  opts.headers = headers;
+  const url = optionsVaultUrl.replace(/\/$/, '') + path;
+  return fetch(url, opts).then(async (r) => {
+    const text = await r.text();
+    let json;
+    try { json = text ? JSON.parse(text) : {}; } catch (e) { json = { raw: text }; }
+    if (!r.ok) {
+      const err = new Error('Vault API error: ' + r.status);
+      err.response = json;
+      throw err;
+    }
+    return json;
+  });
+}
+
+// Fonction pour lire un secret depuis Vault
+function readSecretOptions(secretPath) {
+  const mount = optionsKvMount;
+  const p = `/v1/${mount}/data/${encodeURIComponent(secretPath)}`;
+  return vaultFetchOptions(p, { method: 'GET' });
+}
+
+// Fonction pour écrire un secret dans Vault
+function writeSecretOptions(secretPath, dataObj) {
+  const mount = optionsKvMount;
+  const p = `/v1/${mount}/data/${encodeURIComponent(secretPath)}`;
+  return vaultFetchOptions(p, { method: 'POST', body: JSON.stringify({ data: dataObj }) });
+}
+
+// Fonction pour charger les catégories depuis Vault
+async function loadCategoriesFromVaultOptions() {
+  try {
+    const res = await readSecretOptions('categories');
+    const categoriesList = (res && res.data && res.data.data && res.data.data.categories) || [];
+    return Array.isArray(categoriesList) ? categoriesList : [];
+  } catch (e) {
+    console.log('Fichier categories n\'existe pas encore');
+    return [];
+  }
+}
+
+// Fonction pour déchiffrer un secret
+async function decryptSecretValue(encryptedValue, categoryPath, secretName, key) {
+  if (!encryptedValue) return '';
+  
+  if (typeof encryptedValue === 'object' && encryptedValue.iv && encryptedValue.ciphertext && encryptedValue.tag) {
+    // C'est un objet chiffré
+    const context = `vault-secret-${categoryPath}-${secretName}-${key}`;
+    return await window.cryptoSystem.decryptSecret(encryptedValue, optionsPin, context);
+  } else if (typeof encryptedValue === 'string') {
+    // Vérifier si c'est du JSON chiffré
+    try {
+      const parsedValue = JSON.parse(encryptedValue);
+      if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
+        const context = `vault-secret-${categoryPath}-${secretName}-${key}`;
+        return await window.cryptoSystem.decryptSecret(parsedValue, optionsPin, context);
+      } else {
+        return encryptedValue;
+      }
+    } catch (e) {
+      return encryptedValue;
+    }
+  } else {
+    return encryptedValue;
+  }
+}
+
+// Fonction pour chiffrer un secret
+async function encryptSecretValue(value, categoryPath, secretName, key) {
+  if (!value) return '';
+  
+  const context = `vault-secret-${categoryPath}-${secretName}-${key}`;
+  return await window.cryptoSystem.encryptSecret(value, optionsPin, context);
+}
+
+// Fonction pour exporter toutes les catégories et leurs secrets
+async function exportAllCategories() {
+  try {
+    // Demander le PIN
+    const pin = await promptForPin(
+      '🔐 Export des Catégories',
+      'Entrez votre PIN pour exporter vos catégories et secrets'
+    );
+    
+    if (!pin) {
+      return; // Annulé
+    }
+
+    // Authentifier
+    categoriesStatus.innerHTML = '⏳ Authentification...';
+    categoriesStatus.style.color = '#3b82f6';
+    await authenticateForOptions(pin);
+
+    // Charger les catégories
+    categoriesStatus.innerHTML = '⏳ Chargement des catégories...';
+    const categories = await loadCategoriesFromVaultOptions();
+
+    if (categories.length === 0) {
+      categoriesStatus.innerHTML = '⚠️ Aucune catégorie trouvée';
+      categoriesStatus.style.color = '#d97706';
+      return;
+    }
+
+    // Pour chaque catégorie, charger tous les secrets
+    categoriesStatus.innerHTML = '⏳ Chargement des secrets...';
+    const exportData = {
+      version: '1.0',
+      type: 'vault-password-manager-categories',
+      exportDate: new Date().toISOString(),
+      categories: []
+    };
+
+    for (const categoryPath of categories) {
+      try {
+        // Lire le secret de la catégorie (qui contient tous les secrets)
+        const res = await readSecretOptions(categoryPath);
+        const categoryData = (res && res.data && res.data.data) || {};
+        
+        // Déchiffrer tous les secrets
+        const decryptedSecrets = {};
+        for (const [secretName, secretData] of Object.entries(categoryData)) {
+          if (secretName === 'categories') continue; // Ignorer la clé categories
+          
+          if (Array.isArray(secretData)) {
+            // Déchiffrer chaque élément de la liste
+            const decryptedItems = [];
+            for (const item of secretData) {
+              if (item && item.key) {
+                const decryptedValue = await decryptSecretValue(
+                  item.value,
+                  categoryPath,
+                  secretName,
+                  item.key
+                );
+                decryptedItems.push({
+                  key: item.key,
+                  value: decryptedValue
+                });
+              }
+            }
+            decryptedSecrets[secretName] = decryptedItems;
+          } else {
+            decryptedSecrets[secretName] = secretData;
+          }
+        }
+
+        exportData.categories.push({
+          name: categoryPath,
+          secrets: decryptedSecrets
+        });
+      } catch (e) {
+        console.error(`Erreur lors du chargement de la catégorie ${categoryPath}:`, e);
+        // Continuer avec les autres catégories
+        exportData.categories.push({
+          name: categoryPath,
+          secrets: {},
+          error: e.message
+        });
+      }
+    }
+
+    // Créer le fichier JSON
+    const fileContent = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([fileContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vault-categories-export-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    categoriesStatus.innerHTML = `✅ Export réussi ! ${exportData.categories.length} catégorie(s) exportée(s)`;
+    categoriesStatus.style.color = '#059669';
+    
+    alert(`✅ Export réussi !\n\n${exportData.categories.length} catégorie(s) exportée(s).\n\n⚠️ IMPORTANT : Ce fichier contient vos secrets déchiffrés. Stockez-le dans un endroit sûr et ne le partagez jamais.`);
+
+  } catch (error) {
+    console.error('Erreur lors de l\'export:', error);
+    categoriesStatus.innerHTML = `❌ Erreur: ${error.message}`;
+    categoriesStatus.style.color = '#dc2626';
+    alert('❌ Erreur lors de l\'export: ' + error.message);
+  }
+}
+
+// Fonction pour importer des catégories et leurs secrets
+async function importAllCategories(file) {
+  try {
+    // Lire le fichier
+    const fileContent = await file.text();
+    let importData;
+    
+    try {
+      importData = JSON.parse(fileContent);
+    } catch {
+      throw new Error('Format de fichier invalide. Le fichier doit être au format JSON.');
+    }
+
+    // Vérifier le format
+    if (!importData.categories || importData.type !== 'vault-password-manager-categories') {
+      throw new Error('Ce fichier ne contient pas des catégories valides.');
+    }
+
+    // Confirmation
+    const confirmMsg = `⚠️ ATTENTION ⚠️\n\nVous êtes sur le point d'importer ${importData.categories.length} catégorie(s).\n\n` +
+      `Cela va :\n` +
+      `• Remplacer toutes vos catégories existantes\n` +
+      `• Remplacer tous les secrets existants dans ces catégories\n` +
+      `• Les secrets seront chiffrés avec votre Master Key actuelle\n\n` +
+      `Fichier exporté le : ${importData.exportDate ? new Date(importData.exportDate).toLocaleString() : 'date inconnue'}\n\n` +
+      `Êtes-vous sûr de vouloir continuer ?`;
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    // Demander le PIN
+    const pin = await promptForPin(
+      '🔐 Import des Catégories',
+      'Entrez votre PIN pour importer vos catégories et secrets'
+    );
+    
+    if (!pin) {
+      return; // Annulé
+    }
+
+    // Authentifier
+    categoriesStatus.innerHTML = '⏳ Authentification...';
+    categoriesStatus.style.color = '#3b82f6';
+    await authenticateForOptions(pin);
+
+    // Vérifier que le système de chiffrement est initialisé
+    const hasMK = await window.cryptoSystem.hasMasterKey();
+    if (!hasMK) {
+      throw new Error('Aucune Master Key trouvée. Veuillez d\'abord configurer l\'extension.');
+    }
+
+    // Importer chaque catégorie
+    categoriesStatus.innerHTML = '⏳ Import en cours...';
+    let importedCount = 0;
+    let errorCount = 0;
+
+    for (const category of importData.categories) {
+      try {
+        if (category.error) {
+          console.warn(`Catégorie ${category.name} a une erreur: ${category.error}`);
+          errorCount++;
+          continue;
+        }
+
+        // Chiffrer tous les secrets
+        const encryptedSecrets = {};
+        for (const [secretName, secretData] of Object.entries(category.secrets || {})) {
+          if (Array.isArray(secretData)) {
+            // Chiffrer chaque élément de la liste
+            const encryptedItems = [];
+            for (const item of secretData) {
+              if (item && item.key) {
+                const encryptedValue = await encryptSecretValue(
+                  item.value,
+                  category.name,
+                  secretName,
+                  item.key
+                );
+                encryptedItems.push({
+                  key: item.key,
+                  value: encryptedValue
+                });
+              }
+            }
+            encryptedSecrets[secretName] = encryptedItems;
+          } else {
+            encryptedSecrets[secretName] = secretData;
+          }
+        }
+
+        // Écrire la catégorie dans Vault
+        await writeSecretOptions(category.name, encryptedSecrets);
+        importedCount++;
+      } catch (e) {
+        console.error(`Erreur lors de l'import de la catégorie ${category.name}:`, e);
+        errorCount++;
+      }
+    }
+
+    // Mettre à jour la liste des catégories
+    const categoryNames = importData.categories
+      .filter(cat => !cat.error)
+      .map(cat => cat.name);
+    
+    await writeSecretOptions('categories', { categories: categoryNames });
+
+    categoriesStatus.innerHTML = `✅ Import réussi ! ${importedCount} catégorie(s) importée(s)${errorCount > 0 ? `, ${errorCount} erreur(s)` : ''}`;
+    categoriesStatus.style.color = '#059669';
+    
+    alert(`✅ Import réussi !\n\n${importedCount} catégorie(s) importée(s).${errorCount > 0 ? `\n\n⚠️ ${errorCount} catégorie(s) n'a/ont pas pu être importée(s).` : ''}`);
+
+    // Réinitialiser l'input file
+    importCategoriesFile.value = '';
+
+  } catch (error) {
+    console.error('Erreur lors de l\'import:', error);
+    categoriesStatus.innerHTML = `❌ Erreur: ${error.message}`;
+    categoriesStatus.style.color = '#dc2626';
+    alert('❌ Erreur lors de l\'import: ' + error.message);
+    importCategoriesFile.value = '';
+  }
+}
+
+// Event listeners pour l'import/export
+exportCategoriesBtn.addEventListener('click', exportAllCategories);
+
+importCategoriesBtn.addEventListener('click', () => {
+  importCategoriesFile.click();
+});
+
+importCategoriesFile.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  await importAllCategories(file);
 });

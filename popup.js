@@ -36,6 +36,13 @@ const createPinInput = document.getElementById('createPinInput');
 const createPinConfirm = document.getElementById('createPinConfirm');
 const createPinBtn = document.getElementById('createPinBtn');
 const createPinError = document.getElementById('createPinError');
+const createPasswordModal = document.getElementById('createPasswordModal');
+const createPasswordInput = document.getElementById('createPasswordInput');
+const createPasswordConfirm = document.getElementById('createPasswordConfirm');
+const createPasswordBtn = document.getElementById('createPasswordBtn');
+const createPasswordError = document.getElementById('createPasswordError');
+const toggleCreatePassword = document.getElementById('toggleCreatePassword');
+const toggleCreatePasswordConfirm = document.getElementById('toggleCreatePasswordConfirm');
 
 let settings = { vaultUrl: '', vaultToken: '', kvMount: '' };
 let isAuthenticated = false;
@@ -43,6 +50,7 @@ let currentDecryptedToken = null;
 let currentPin = null; // PIN stocké en mémoire pendant la session
 let pendingToken = null; // Token en attente de configuration
 let pendingDisplayName = null; // Display name en attente
+let pendingMasterPassword = null; // Mot de passe Master Key en attente
 let categories = []; // Liste des catégories
 const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.googleusercontent.com";
 
@@ -1309,11 +1317,11 @@ async function handleVaultToken(vaultToken) {
       return;
     }
 
-    // Token valid and mount created, store temporarily and ask for PIN creation
+    // Token valid and mount created, store temporarily and ask for Master Password creation
     pendingToken = vaultToken;
     pendingDisplayName = entityName;
     hideSetupModal();
-    showCreatePinModal();
+    showCreatePasswordModal();
   } catch (error) {
     console.error('Token validation error:', error);
     setupError.textContent = error.message || 'Erreur lors de la validation du token';
@@ -1380,11 +1388,11 @@ async function handleCredentialResponse(response) {
       return;
     }
 
-    // Token valid and mount created, store temporarily and ask for PIN creation
+    // Token valid and mount created, store temporarily and ask for Master Password creation
     pendingToken = vaultToken;
     pendingDisplayName = entityName;
     hideSetupModal();
-    showCreatePinModal();
+    showCreatePasswordModal();
   } catch (error) {
     console.error('OIDC authentication error:', error);
     setupError.textContent = error.message || 'Erreur lors de l\'authentification OIDC';
@@ -1395,6 +1403,20 @@ async function handleCredentialResponse(response) {
 // Cacher le modal de configuration initiale
 function hideSetupModal() {
   setupModal.classList.remove('show');
+}
+
+// Afficher le modal de création de mot de passe Master Key
+function showCreatePasswordModal() {
+  createPasswordModal.classList.add('show');
+  createPasswordInput.value = '';
+  createPasswordConfirm.value = '';
+  createPasswordError.style.display = 'none';
+  createPasswordInput.focus();
+}
+
+// Cacher le modal de création de mot de passe Master Key
+function hideCreatePasswordModal() {
+  createPasswordModal.classList.remove('show');
 }
 
 // Afficher le modal de création de PIN
@@ -1409,6 +1431,37 @@ function showCreatePinModal() {
 // Cacher le modal de création de PIN
 function hideCreatePinModal() {
   createPinModal.classList.remove('show');
+}
+
+// Toggle visibilité des mots de passe
+if (toggleCreatePassword) {
+  toggleCreatePassword.addEventListener('click', () => {
+    const input = createPasswordInput;
+    if (input.type === 'password') {
+      input.type = 'text';
+      toggleCreatePassword.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      toggleCreatePassword.title = 'Masquer le mot de passe';
+    } else {
+      input.type = 'password';
+      toggleCreatePassword.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      toggleCreatePassword.title = 'Afficher le mot de passe';
+    }
+  });
+}
+
+if (toggleCreatePasswordConfirm) {
+  toggleCreatePasswordConfirm.addEventListener('click', () => {
+    const input = createPasswordConfirm;
+    if (input.type === 'password') {
+      input.type = 'text';
+      toggleCreatePasswordConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+      toggleCreatePasswordConfirm.title = 'Masquer le mot de passe';
+    } else {
+      input.type = 'password';
+      toggleCreatePasswordConfirm.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      toggleCreatePasswordConfirm.title = 'Afficher le mot de passe';
+    }
+  });
 }
 
 // Créer le mount path s'il n'existe pas
@@ -2708,15 +2761,47 @@ setupTokenBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Token valide et mount créé, stocker temporairement et demander la création du PIN
+    // Token valide et mount créé, stocker temporairement et demander la création du mot de passe Master Key
     pendingToken = token;
     pendingDisplayName = entityName;
     hideSetupModal();
-    showCreatePinModal();
+    showCreatePasswordModal();
   } catch (error) {
     setupError.textContent = error.message || 'Erreur lors de la validation du token';
     setupError.style.display = 'block';
   }
+});
+
+// Gestion de la création du mot de passe Master Key
+createPasswordBtn.addEventListener('click', async () => {
+  const password = createPasswordInput.value;
+  const passwordConfirmValue = createPasswordConfirm.value;
+  
+  // Validation du mot de passe
+  if (password.length < 12) {
+    createPasswordError.textContent = 'Le mot de passe doit contenir au moins 12 caractères';
+    createPasswordError.style.display = 'block';
+    return;
+  }
+  
+  if (password !== passwordConfirmValue) {
+    createPasswordError.textContent = 'Les mots de passe ne correspondent pas';
+    createPasswordError.style.display = 'block';
+    return;
+  }
+  
+  if (!pendingToken) {
+    createPasswordError.textContent = 'Erreur: token manquant';
+    createPasswordError.style.display = 'block';
+    return;
+  }
+  
+  createPasswordError.style.display = 'none';
+  
+  // Stocker le mot de passe temporairement et passer au modal PIN
+  pendingMasterPassword = password;
+  hideCreatePasswordModal();
+  showCreatePinModal();
 });
 
 // Gestion de la création du PIN
@@ -2742,6 +2827,12 @@ createPinBtn.addEventListener('click', async () => {
     return;
   }
 
+  if (!pendingMasterPassword) {
+    createPinError.textContent = 'Erreur: mot de passe Master Key manquant';
+    createPinError.style.display = 'block';
+    return;
+  }
+
   createPinError.style.display = 'none';
 
   try {
@@ -2754,12 +2845,11 @@ createPinBtn.addEventListener('click', async () => {
     // Chiffrer le token avec le PIN
     const encryptedToken = await window.cryptoUtils.encrypt(pendingToken, pin);
 
-    // Initialiser le système de chiffrement (générer la master key)
-    await window.cryptoSystem.initializeCryptoSystem(pin);
-    console.log('Système de chiffrement initialisé avec succès');
-
-    // Déterminer le kvMount à utiliser
+    // Initialiser le système de chiffrement avec le mot de passe Master Key
+    // Utiliser le kvMount (entity_name) comme userId pour générer un sel déterministe
     const kvMount = pendingDisplayName || settings.kvMount;
+    await window.cryptoSystem.initializeCryptoSystem(pendingMasterPassword, pin, kvMount);
+    console.log('✅ Système de chiffrement initialisé avec succès');
     
     // Préparer les données à sauvegarder
     const dataToSave = {
@@ -2791,6 +2881,7 @@ createPinBtn.addEventListener('click', async () => {
     showToast('Configuration enregistrée avec succès !', 'success');
     pendingToken = null;
     pendingDisplayName = null;
+    pendingMasterPassword = null;
 
     // Maintenant demander l'authentification rapide pour utiliser l'extension
     setTimeout(() => {

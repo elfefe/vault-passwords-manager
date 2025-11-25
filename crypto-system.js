@@ -6,7 +6,7 @@
 // --------------------------------------------------------------
 
 /**
- * Génère une master key sécurisée
+ * Génère une master key sécurisée (obsolète - utilisez deriveMasterKeyFromPassword)
  * @param {number} length - taille de la clé en bytes (défaut: 32 = 256 bits)
  * @returns {Uint8Array}
  */
@@ -15,23 +15,103 @@ function generateMasterKey(length = 32) {
 }
 
 /**
+ * Génère un sel déterministe à partir d'un identifiant utilisateur (kvMount/entity_name)
+ * @param {string} userId - l'identifiant utilisateur (kvMount/entity_name)
+ * @returns {Promise<Uint8Array>}
+ */
+async function generateDeterministicSalt(userId) {
+  // Utiliser SHA-256 pour créer un sel de 16 bytes à partir de l'identifiant utilisateur
+  const userIdBuffer = new TextEncoder().encode(`vault-master-key-salt-${userId}`);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', userIdBuffer);
+  const hashArray = new Uint8Array(hashBuffer);
+  // Prendre les 16 premiers bytes comme sel
+  return hashArray.slice(0, 16);
+}
+
+/**
+ * Dérive une master key depuis un mot de passe utilisateur en utilisant PBKDF2
+ * @param {string} password - le mot de passe utilisateur
+ * @param {string} userId - l'identifiant utilisateur (kvMount/entity_name) pour générer un sel déterministe
+ * @param {Uint8Array} salt - le sel pour la dérivation (optionnel, généré de manière déterministe si non fourni)
+ * @param {number} iterations - nombre d'itérations PBKDF2 (défaut: 100000)
+ * @param {number} length - taille de la clé en bytes (défaut: 32 = 256 bits)
+ * @returns {Promise<{key: Uint8Array, salt: Uint8Array}>}
+ */
+async function deriveMasterKeyFromPassword(password, userId = null, salt = null, iterations = 100000, length = 32) {
+  // Générer un sel déterministe si non fourni et qu'un userId est fourni
+  if (!salt) {
+    if (userId) {
+      // Utiliser un sel déterministe basé sur l'identifiant utilisateur
+      salt = await generateDeterministicSalt(userId);
+    } else {
+      // Fallback : générer un sel aléatoire (pour compatibilité avec l'ancien système)
+      salt = crypto.getRandomValues(new Uint8Array(16));
+    }
+  }
+  
+  // Convertir le mot de passe en ArrayBuffer
+  const passwordBuffer = new TextEncoder().encode(password);
+  
+  // Importer la clé pour PBKDF2
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    passwordBuffer,
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  
+  // Dériver la clé avec PBKDF2
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: salt,
+      iterations: iterations,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    length * 8 // longueur en bits
+  );
+  
+  return {
+    key: new Uint8Array(derivedBits),
+    salt: salt
+  };
+}
+
+/**
  * Stocke la master key dans chrome.storage (local + sync), chiffrée par le PIN
  * @param {Uint8Array} masterKey - la master key à stocker
+ * @param {Uint8Array} salt - le sel utilisé pour la dérivation (optionnel)
  * @param {string} pin - le PIN à 4 chiffres pour chiffrer la master key
  * @param {boolean} enableSync - si true, synchronise aussi dans chrome.storage.sync
  */
-async function storeMasterKey(masterKey, pin, enableSync = true) {
+async function storeMasterKey(masterKey, pin, salt = null, enableSync = true) {
   // Convertir la master key en hex pour le stockage
   const masterKeyHex = Array.from(masterKey)
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
   
+  // Convertir le sel en hex si fourni
+  let saltHex = null;
+  if (salt) {
+    saltHex = Array.from(salt)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  
   // Chiffrer la master key avec le PIN en utilisant AES-GCM (ancien système)
   const encryptedMasterKey = await window.cryptoUtils.encrypt(masterKeyHex, pin);
   
+  // Préparer les données à stocker
+  const dataToStore = { encryptedMasterKey };
+  if (saltHex) {
+    dataToStore.masterKeySalt = saltHex;
+  }
+  
   // Stocker dans chrome.storage.local
   await new Promise((resolve) => {
-    chrome.storage.local.set({ encryptedMasterKey }, resolve);
+    chrome.storage.local.set(dataToStore, resolve);
   });
   
   // Si la sync est activée, stocker aussi dans chrome.storage.sync
@@ -39,7 +119,7 @@ async function storeMasterKey(masterKey, pin, enableSync = true) {
     try {
       await new Promise((resolve, reject) => {
         chrome.storage.sync.set({ 
-          encryptedMasterKey,
+          ...dataToStore,
           masterKeySyncEnabled: true,
           masterKeySyncDate: new Date().toISOString()
         }, () => {
@@ -66,21 +146,24 @@ async function storeMasterKey(masterKey, pin, enableSync = true) {
 async function loadMasterKey(pin) {
   // Essayer d'abord chrome.storage.local
   let stored = await new Promise((resolve) => {
-    chrome.storage.local.get(['encryptedMasterKey'], resolve);
+    chrome.storage.local.get(['encryptedMasterKey', 'masterKeySalt'], resolve);
   });
   
   // Si pas en local, essayer chrome.storage.sync
   if (!stored.encryptedMasterKey) {
     console.log('Master Key absente en local, recherche dans sync...');
     stored = await new Promise((resolve) => {
-      chrome.storage.sync.get(['encryptedMasterKey'], resolve);
+      chrome.storage.sync.get(['encryptedMasterKey', 'masterKeySalt'], resolve);
     });
     
     // Si trouvée dans sync, la copier en local pour accès rapide
     if (stored.encryptedMasterKey) {
       console.log('Master Key trouvée dans sync, copie en local...');
       await new Promise((resolve) => {
-        chrome.storage.local.set({ encryptedMasterKey: stored.encryptedMasterKey }, resolve);
+        chrome.storage.local.set({ 
+          encryptedMasterKey: stored.encryptedMasterKey,
+          masterKeySalt: stored.masterKeySalt
+        }, resolve);
       });
     }
   }
@@ -98,6 +181,33 @@ async function loadMasterKey(pin) {
   );
   
   return masterKey;
+}
+
+/**
+ * Récupère le sel de la master key depuis le stockage
+ * @returns {Promise<Uint8Array|null>}
+ */
+async function getMasterKeySalt() {
+  // Essayer d'abord chrome.storage.local
+  let stored = await new Promise((resolve) => {
+    chrome.storage.local.get(['masterKeySalt'], resolve);
+  });
+  
+  // Si pas en local, essayer chrome.storage.sync
+  if (!stored.masterKeySalt) {
+    stored = await new Promise((resolve) => {
+      chrome.storage.sync.get(['masterKeySalt'], resolve);
+    });
+  }
+  
+  if (!stored.masterKeySalt) {
+    return null;
+  }
+  
+  // Convertir de hex vers Uint8Array
+  return new Uint8Array(
+    stored.masterKeySalt.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+  );
 }
 
 /**
@@ -120,6 +230,15 @@ async function hasMasterKey() {
   });
   
   return !!stored.encryptedMasterKey;
+}
+
+/**
+ * Vérifie si le système utilise un mot de passe (présence d'un sel)
+ * @returns {Promise<boolean>}
+ */
+async function usesPassword() {
+  const salt = await getMasterKeySalt();
+  return salt !== null;
 }
 
 /**
@@ -271,12 +390,14 @@ async function decryptSecret(encryptedSecret, pin, context) {
 }
 
 /**
- * Initialise le système de chiffrement (génère ou réutilise la master key)
- * Si une Master Key existe déjà, elle est réutilisée au lieu d'en créer une nouvelle
- * @param {string} pin - le PIN à 4 chiffres
+ * Initialise le système de chiffrement avec un mot de passe utilisateur
+ * Dérive la master key depuis le mot de passe au lieu de la générer aléatoirement
+ * @param {string} password - le mot de passe utilisateur (minimum 12 caractères)
+ * @param {string} pin - le PIN à 4 chiffres pour chiffrer la master key dérivée
+ * @param {string} userId - l'identifiant utilisateur (kvMount/entity_name) pour générer un sel déterministe
  * @returns {Promise<void>}
  */
-async function initializeCryptoSystem(pin) {
+async function initializeCryptoSystem(password, pin, userId = null) {
   // Vérifier si une master key existe déjà
   if (await hasMasterKey()) {
     console.log('✅ Master Key existante détectée - réutilisation au lieu d\'en créer une nouvelle');
@@ -284,14 +405,34 @@ async function initializeCryptoSystem(pin) {
     return;
   }
   
-  // Générer une nouvelle master key
-  console.log('🔑 Aucune Master Key détectée - génération d\'une nouvelle Master Key...');
-  const masterKey = generateMasterKey(32);
+  // Valider le mot de passe
+  if (!password || password.length < 12) {
+    throw new Error('Le mot de passe doit contenir au moins 12 caractères');
+  }
   
-  console.log('✅ Master Key générée (longueur:', masterKey.length, 'bytes)');
+  // Récupérer le userId depuis le stockage si non fourni
+  if (!userId) {
+    const stored = await new Promise((resolve) => {
+      chrome.storage.local.get(['kvMount'], resolve);
+    });
+    userId = stored.kvMount || null;
+    
+    if (!userId) {
+      console.warn('⚠️ Aucun userId (kvMount) trouvé. Le sel sera aléatoire et ne pourra pas être recréé après réinstallation.');
+    }
+  }
   
-  // Stocker la master key chiffrée par le PIN
-  await storeMasterKey(masterKey, pin);
+  // Dériver la master key depuis le mot de passe avec un sel déterministe
+  console.log('🔑 Dérivation de la Master Key depuis le mot de passe utilisateur...');
+  const { key: masterKey, salt } = await deriveMasterKeyFromPassword(password, userId);
+  
+  console.log('✅ Master Key dérivée (longueur:', masterKey.length, 'bytes)');
+  if (userId) {
+    console.log('✅ Sel déterministe utilisé (basé sur userId:', userId, ')');
+  }
+  
+  // Stocker la master key chiffrée par le PIN (avec le sel pour référence, mais il sera régénéré de manière déterministe)
+  await storeMasterKey(masterKey, pin, salt);
   
   console.log('✅ Master Key stockée avec succès et chiffrée avec votre PIN');
 }
@@ -306,10 +447,67 @@ async function changePinAndReencryptMasterKey(oldPin, newPin) {
   // Charger la master key avec l'ancien PIN
   const masterKey = await loadMasterKey(oldPin);
   
-  // Re-chiffrer avec le nouveau PIN
-  await storeMasterKey(masterKey, newPin);
+  // Récupérer le sel existant
+  const salt = await getMasterKeySalt();
+  
+  // Re-chiffrer avec le nouveau PIN (en conservant le sel)
+  await storeMasterKey(masterKey, newPin, salt);
   
   console.log('Master key re-encrypted with new PIN');
+}
+
+/**
+ * Change le mot de passe Master Key (nécessite de re-dériver la clé)
+ * @param {string} oldPassword - l'ancien mot de passe
+ * @param {string} newPassword - le nouveau mot de passe
+ * @param {string} pin - le PIN pour accéder à la master key actuelle
+ * @param {string} userId - l'identifiant utilisateur (kvMount/entity_name) pour générer un sel déterministe
+ * @returns {Promise<void>}
+ */
+async function changeMasterPassword(oldPassword, newPassword, pin, userId = null) {
+  // Valider les mots de passe
+  if (!oldPassword || oldPassword.length < 12) {
+    throw new Error('L\'ancien mot de passe doit contenir au moins 12 caractères');
+  }
+  if (!newPassword || newPassword.length < 12) {
+    throw new Error('Le nouveau mot de passe doit contenir au moins 12 caractères');
+  }
+  
+  // Récupérer le userId depuis le stockage si non fourni
+  if (!userId) {
+    const stored = await new Promise((resolve) => {
+      chrome.storage.local.get(['kvMount'], resolve);
+    });
+    userId = stored.kvMount || null;
+  }
+  
+  // Dériver l'ancienne master key depuis l'ancien mot de passe avec le sel déterministe
+  const { key: oldMasterKey } = await deriveMasterKeyFromPassword(oldPassword, userId);
+  
+  // Vérifier que l'ancienne master key correspond (en comparant avec celle stockée)
+  const storedMasterKey = await loadMasterKey(pin);
+  if (!arraysEqual(oldMasterKey, storedMasterKey)) {
+    throw new Error('Ancien mot de passe incorrect');
+  }
+  
+  // Dériver une nouvelle master key depuis le nouveau mot de passe (même sel déterministe)
+  const { key: newMasterKey, salt: newSalt } = await deriveMasterKeyFromPassword(newPassword, userId);
+  
+  // Stocker la nouvelle master key (avec le sel pour référence)
+  await storeMasterKey(newMasterKey, pin, newSalt);
+  
+  console.log('Master password changed successfully');
+}
+
+/**
+ * Compare deux Uint8Array
+ */
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 // --------------------------------------------------------------
@@ -324,6 +522,10 @@ if (typeof window !== 'undefined') {
     loadMasterKey,
     storeMasterKey,
     changePinAndReencryptMasterKey,
+    changeMasterPassword,
+    deriveMasterKeyFromPassword,
+    usesPassword,
+    getMasterKeySalt,
     
     // Synchronisation Chrome
     isSyncEnabled,
