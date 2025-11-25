@@ -11,6 +11,19 @@ const copyAllBtn = document.getElementById('copyAllBtn');
 const secretTableBody = document.getElementById('secretTableBody');
 const toast = document.getElementById('toast');
 const optionsLink = document.getElementById('optionsLink');
+const cardsContainer = document.getElementById('cardsContainer');
+const itemsCount = document.getElementById('itemsCount');
+const searchInput = document.getElementById('searchInput');
+const createBtn = document.getElementById('createBtn');
+const typeBtn = document.getElementById('typeBtn');
+const settingsBtn = document.getElementById('settingsBtn');
+const cardsView = document.getElementById('cardsView');
+const detailView = document.getElementById('detailView');
+const backBtn = document.getElementById('backBtn');
+const detailTitle = document.getElementById('detailTitle');
+const detailTitleInput = document.getElementById('detailTitleInput');
+let currentCategoryPath = null;
+let currentSecretName = null; // Nom du secret actuellement édité
 const authModal = document.getElementById('authModal');
 const authPinInput = document.getElementById('authPinInput');
 const authError = document.getElementById('authError');
@@ -1635,8 +1648,398 @@ async function ensureAuthenticated() {
 }
 
 // utilitaires pour gestion UI
+let currentSecrets = []; // Stocker les secrets actuels pour la recherche
+
 function clearSecretFields() {
   secretTableBody.innerHTML = '';
+  if (cardsContainer) {
+    cardsContainer.innerHTML = '';
+    currentSecrets = [];
+    updateItemsCount();
+  }
+}
+
+// Fonction pour afficher les secrets sous forme de cartes
+function displayCards(secrets) {
+  if (!cardsContainer) return;
+  
+  cardsContainer.innerHTML = '';
+  currentSecrets = secrets;
+  
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+  const filteredSecrets = searchTerm 
+    ? secrets.filter(s => 
+        s.key.toLowerCase().includes(searchTerm) || 
+        s.value.toLowerCase().includes(searchTerm)
+      )
+    : secrets;
+  
+  filteredSecrets.forEach((secret, index) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    
+    // Icône avec première lettre ou numéro
+    const icon = document.createElement('div');
+    icon.className = 'card-icon';
+    const iconText = secret.key.charAt(0).toUpperCase() || (index + 1).toString();
+    icon.textContent = iconText;
+    
+    // Contenu de la carte
+    const content = document.createElement('div');
+    content.className = 'card-content';
+    
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.textContent = secret.value || secret.key;
+    
+    const subtitle = document.createElement('div');
+    subtitle.className = 'card-subtitle';
+    subtitle.textContent = secret.key;
+    
+    content.appendChild(title);
+    content.appendChild(subtitle);
+    
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    
+    // Bouton copier
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'card-action-btn';
+    copyBtn.title = 'Copier';
+    copyBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(secret.value);
+        showToast('Valeur copiée', 'success');
+      } catch (err) {
+        const textarea = document.createElement('textarea');
+        textarea.value = secret.value;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showToast('Valeur copiée', 'success');
+      }
+    });
+    
+    // Bouton ouvrir - naviguer vers la vue de détail
+    const openBtn = document.createElement('button');
+    openBtn.className = 'card-action-btn';
+    openBtn.title = 'Ouvrir';
+    openBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    openBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      navigateToDetail(secret, index);
+    });
+    
+    actions.appendChild(copyBtn);
+    actions.appendChild(openBtn);
+    
+    // Clic sur la carte pour ouvrir le détail
+    card.addEventListener('click', (e) => {
+      // Ne pas ouvrir si on clique sur les boutons d'action
+      if (!e.target.closest('.card-action-btn')) {
+        navigateToDetail(secret, index);
+      }
+    });
+    
+    card.appendChild(icon);
+    card.appendChild(content);
+    card.appendChild(actions);
+    
+    // Animation d'entrée
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(-10px)';
+    cardsContainer.appendChild(card);
+    setTimeout(() => {
+      card.style.transition = 'all 0.3s ease';
+      card.style.opacity = '1';
+      card.style.transform = 'translateY(0)';
+    }, index * 50);
+  });
+  
+  updateItemsCount(filteredSecrets.length);
+}
+
+// Fonction pour mettre à jour le compteur d'éléments
+function updateItemsCount(count) {
+  if (!itemsCount) return;
+  const total = count !== undefined ? count : (currentSecrets ? currentSecrets.length : 0);
+  itemsCount.textContent = `${total} élément${total > 1 ? 's' : ''} affiché${total > 1 ? 's' : ''}`;
+}
+
+// Fonction pour charger les cartes directement depuis Vault
+// Liste tous les secrets individuels dans une catégorie
+async function loadCardsFromVault(categoryPath) {
+  if (!categoryPath || !cardsContainer) {
+    displayCards([]);
+    return;
+  }
+
+  const authenticated = await ensureAuthenticated();
+  if (!authenticated) {
+    displayCards([]);
+    return;
+  }
+
+  try {
+    // Lire le secret de la catégorie (qui contient tous les secrets de cette catégorie)
+    let categoryData = {};
+    try {
+      const res = await readSecret(categoryPath);
+      categoryData = (res && res.data && res.data.data) || {};
+    } catch (e) {
+      // La catégorie n'existe pas encore ou est vide
+      displayCards([]);
+      return;
+    }
+
+    // Exclure la clé "categories" si elle existe
+    const secretNames = Object.keys(categoryData).filter(key => key !== 'categories');
+    
+    if (secretNames.length === 0) {
+      displayCards([]);
+      return;
+    }
+
+    // Extraire chaque secret et préparer l'affichage
+    const secrets = [];
+    for (const secretName of secretNames) {
+      const secretData = categoryData[secretName];
+      
+      // secretData devrait être une liste de clés-valeurs
+      let mainValue = '';
+      let displayKey = secretName;
+      
+      if (Array.isArray(secretData) && secretData.length > 0) {
+        // Prendre la première valeur de la liste pour l'affichage
+        const firstItem = secretData[0];
+        if (firstItem && firstItem.value) {
+          // Déchiffrer la valeur si nécessaire
+          let decryptedValue = firstItem.value;
+          
+          // Vérifier si c'est un objet chiffré
+          if (typeof firstItem.value === 'object' && firstItem.value.iv && firstItem.value.ciphertext && firstItem.value.tag) {
+            const context = `vault-secret-${categoryPath}-${secretName}-${firstItem.key}`;
+            decryptedValue = await window.cryptoSystem.decryptSecret(firstItem.value, currentPin, context);
+          } else if (typeof firstItem.value === 'string') {
+            // Vérifier si c'est une chaîne JSON chiffrée
+            try {
+              const parsedValue = JSON.parse(firstItem.value);
+              if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
+                const context = `vault-secret-${categoryPath}-${secretName}-${firstItem.key}`;
+                decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
+              } else {
+                decryptedValue = firstItem.value;
+              }
+            } catch (e) {
+              // Utiliser la valeur brute
+              decryptedValue = firstItem.value;
+            }
+          }
+          
+          mainValue = decryptedValue;
+          displayKey = firstItem.key || secretName;
+        }
+      }
+      
+      secrets.push({
+        key: secretName,
+        value: mainValue,
+        displayKey: displayKey,
+        path: categoryPath // Le path est maintenant juste la catégorie
+      });
+    }
+    
+    displayCards(secrets);
+  } catch (e) {
+    console.error('Erreur lors du chargement des secrets:', e);
+    displayCards([]);
+  }
+}
+
+// Fonction pour convertir les champs du tableau en format cartes (utilisée uniquement pour la synchronisation temporaire)
+function convertTableToCards() {
+  const rows = Array.from(secretTableBody.querySelectorAll('tr'));
+  const secrets = rows.map(row => {
+    const keyInput = row.querySelector('td:first-child input');
+    const valInput = row.querySelector('td:nth-child(2) input');
+    return {
+      key: keyInput ? keyInput.value.trim() : '',
+      value: valInput ? valInput.value : ''
+    };
+  }).filter(s => s.key || s.value);
+  
+  displayCards(secrets);
+}
+
+// Fonction pour naviguer vers la vue de détail
+async function navigateToDetail(secret, index, isNew = false) {
+  if (!cardsView || !detailView) return;
+  
+  // Masquer la vue des cartes et afficher la vue de détail
+  cardsView.style.display = 'none';
+  detailView.style.display = 'flex';
+  
+  if (isNew) {
+    // Nouveau secret - initialiser avec un nom par défaut et un champ "Mot de passe"
+    currentSecretName = null;
+    if (detailTitleInput) {
+      detailTitleInput.value = 'Nouveau secret';
+    } else if (detailTitle) {
+      detailTitle.textContent = 'Nouveau secret';
+    }
+    clearSecretFields();
+    // Ajouter le champ "Mot de passe" par défaut avec une valeur vide
+    addField('Mot de passe', '', true);
+  } else if (secret) {
+    // Secret existant - charger les données du secret spécifique
+    currentSecretName = secret.key;
+    if (detailTitleInput) {
+      detailTitleInput.value = secret.key || 'Détail du secret';
+    } else if (detailTitle) {
+      detailTitle.textContent = secret.key || 'Détail du secret';
+    }
+    
+    // Charger le secret spécifique avec sa liste de clés-valeurs
+    // Le path est maintenant juste la catégorie
+    if (currentCategoryPath) {
+      await loadSecretDetail(currentCategoryPath);
+    } else if (secret.path) {
+      // Extraire la catégorie du path si nécessaire (pour compatibilité)
+      const pathParts = secret.path.split('/');
+      const categoryPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : secret.path;
+      await loadSecretDetail(categoryPath);
+    } else {
+      clearSecretFields();
+      addField(secret.key, secret.value);
+    }
+  }
+}
+
+// Fonction pour charger un secret spécifique avec sa liste de clés-valeurs
+async function loadSecretDetail(secretPath) {
+  if (!secretPath) {
+    clearSecretFields();
+    return;
+  }
+
+  // Extraire le nom du secret depuis le path
+  // Le path peut être soit "categorie/nom_secret" (ancien format) soit juste "categorie" (nouveau format)
+  let categoryPath = secretPath;
+  let secretName = null;
+  
+  // Utiliser currentCategoryPath si disponible, sinon extraire du path
+  if (currentCategoryPath) {
+    categoryPath = currentCategoryPath;
+    secretName = currentSecretName;
+  } else {
+    const pathParts = secretPath.split('/');
+    if (pathParts.length > 1) {
+      // Ancien format : "categorie/nom_secret"
+      secretName = pathParts[pathParts.length - 1];
+      categoryPath = pathParts.slice(0, -1).join('/');
+    } else {
+      // Si on a juste le path de la catégorie, utiliser currentSecretName
+      categoryPath = secretPath;
+      secretName = currentSecretName;
+    }
+  }
+
+  if (!secretName) {
+    clearSecretFields();
+    return;
+  }
+
+  currentSecretName = secretName;
+  // Mettre à jour le champ de saisie du nom
+  if (detailTitleInput) {
+    detailTitleInput.value = secretName;
+  } else if (detailTitle) {
+    detailTitle.textContent = secretName;
+  }
+
+  const authenticated = await ensureAuthenticated();
+  if (!authenticated) return;
+
+  try {
+    // Lire le secret de la catégorie (qui contient tous les secrets)
+    const res = await readSecret(categoryPath);
+    const categoryData = (res && res.data && res.data.data) || {};
+    
+    clearSecretFields();
+    
+    // Extraire le secret spécifique par son nom
+    const secretData = categoryData[secretName];
+    
+    if (secretData && Array.isArray(secretData)) {
+      // Charger chaque élément de la liste dans le tableau
+      for (const item of secretData) {
+        if (item && item.key) {
+          let decryptedValue = item.value || '';
+          
+          // Déchiffrer la valeur si nécessaire (item.value est déjà un objet si chiffré)
+          if (item.value && typeof item.value === 'object' && item.value.iv && item.value.ciphertext && item.value.tag) {
+            // C'est un objet chiffré, le déchiffrer
+            const context = `vault-secret-${categoryPath}-${secretName}-${item.key}`;
+            decryptedValue = await window.cryptoSystem.decryptSecret(item.value, currentPin, context);
+          } else if (typeof item.value === 'string') {
+            // C'est une chaîne, vérifier si c'est du JSON chiffré
+            try {
+              const parsedValue = JSON.parse(item.value);
+              if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
+                const context = `vault-secret-${categoryPath}-${secretName}-${item.key}`;
+                decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
+              } else {
+                decryptedValue = item.value;
+              }
+            } catch (e) {
+              // Ce n'est pas du JSON, utiliser la valeur brute
+              decryptedValue = item.value;
+            }
+          } else {
+            // C'est déjà une valeur déchiffrée ou autre type
+            decryptedValue = item.value;
+          }
+          
+          const isPwd = item.key.toLowerCase().includes('password') || item.key.toLowerCase().includes('pass') || item.key.toLowerCase().includes('pwd');
+          addField(item.key, decryptedValue, isPwd);
+        }
+      }
+    } else {
+      // Aucune valeur, ajouter un champ vide
+      addField('', '');
+    }
+  } catch (e) {
+    console.error('Erreur lors du chargement du secret:', e);
+    clearSecretFields();
+    addField('', '');
+  }
+}
+
+// Fonction pour revenir à la vue des cartes
+async function navigateToCards() {
+  if (!cardsView || !detailView) return;
+  
+  // Masquer la vue de détail et afficher la vue des cartes
+  detailView.style.display = 'none';
+  cardsView.style.display = 'flex';
+  
+  // Recharger les cartes directement depuis Vault pour s'assurer qu'elles sont synchronisées
+  if (currentCategoryPath) {
+    await loadCardsFromVault(currentCategoryPath);
+  } else {
+    displayCards([]);
+  }
+}
+
+// Event listener pour le bouton retour
+if (backBtn) {
+  backBtn.addEventListener('click', () => {
+    navigateToCards();
+  });
 }
 
 function addField(key = '', value = '', isPassword = false) {
@@ -1747,7 +2150,11 @@ function addField(key = '', value = '', isPassword = false) {
       toggleBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
       toggleBtn.title = 'Afficher';
     }
+    // Ne pas mettre à jour les cartes depuis le tableau - elles doivent toujours refléter Vault
+    // Les cartes seront rechargées depuis Vault après sauvegarde
   });
+  
+  // Ne pas mettre à jour les cartes quand la valeur change - elles doivent toujours refléter Vault
 }
 
 // Bouton "Nouvelle entrée" intelligent
@@ -1762,6 +2169,7 @@ newEntryBtn.addEventListener('click', () => {
   if (!hasEmptyRows) {
     addField('', '');
     showToast('Nouvelle entrée ajoutée', 'success');
+    // Ne pas mettre à jour les cartes - elles doivent toujours refléter Vault
   } else {
     showToast('Une entrée vide existe déjà', 'info');
   }
@@ -1808,13 +2216,55 @@ copyAllBtn.addEventListener('click', async () => {
 addFieldBtn.addEventListener('click', () => {
   addField();
   showToast('Champ ajouté', 'success');
+  // Ne pas mettre à jour les cartes - elles doivent toujours refléter Vault
 });
 
 generateBtn.addEventListener('click', () => {
   const pw = generatePassword(16);
   addField('password', pw, true);
   showToast('Mot de passe généré', 'success');
+  // Ne pas mettre à jour les cartes - elles doivent toujours refléter Vault
 });
+
+// Event listeners pour les nouveaux éléments
+if (searchInput) {
+  searchInput.addEventListener('input', () => {
+    if (cardsContainer && currentSecrets.length > 0) {
+      displayCards(currentSecrets);
+    }
+  });
+}
+
+if (createBtn) {
+  createBtn.addEventListener('click', () => {
+    // Vérifier qu'une catégorie est sélectionnée
+    const path = getCurrentPath();
+    if (!path) {
+      showToast('Sélectionnez d\'abord une catégorie', 'error');
+      return;
+    }
+    // Naviguer vers la vue de détail pour créer un nouveau secret
+    navigateToDetail(null, -1, true);
+  });
+}
+
+if (typeBtn) {
+  typeBtn.addEventListener('click', () => {
+    // Pour l'instant, afficher un message
+    showToast('Fonction Type à implémenter', 'info');
+  });
+}
+
+if (settingsBtn) {
+  settingsBtn.addEventListener('click', () => {
+    // Ouvrir les options
+    if (optionsLink) {
+      optionsLink.click();
+    } else {
+      chrome.runtime.openOptionsPage();
+    }
+  });
+}
 
 // password generator
 function generatePassword(length = 16) {
@@ -1905,48 +2355,27 @@ async function deleteSecretCompletely(secretPath) {
 
 // wire buttons avec authentification
 
-// Fonction pour charger automatiquement les secrets d'une catégorie
+// Fonction pour charger automatiquement les secrets d'une catégorie (maintenue pour compatibilité)
+// Cette fonction n'est plus utilisée pour charger les cartes, mais peut être utilisée pour d'autres besoins
 async function loadCategorySecrets(categoryPath) {
+  // Cette fonction est maintenant obsolète car chaque secret est individuel
+  // Les cartes sont chargées via loadCardsFromVault
+  // Les détails de secret sont chargés via loadSecretDetail
   if (!categoryPath) {
     clearSecretFields();
+    currentCategoryPath = null;
+    if (cardsContainer) {
+      displayCards([]);
+    }
     return;
   }
 
-  const authenticated = await ensureAuthenticated();
-  if (!authenticated) return;
-
-  try {
-    const res = await readSecret(categoryPath);
-    const data = (res && res.data && res.data.data) || {};
-    clearSecretFields();
-    if (Object.keys(data).length === 0) {
-      // Secret vide, ne rien afficher
-    } else {
-      // Déchiffrer les valeurs des secrets
-      for (const [k, v] of Object.entries(data)) {
-        let decryptedValue = v;
-        
-        // Vérifier si la valeur est chiffrée (format JSON avec iv, ciphertext, tag)
-        try {
-          const parsedValue = JSON.parse(v);
-          if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
-            // La valeur est chiffrée, la déchiffrer
-            const context = `vault-secret-${categoryPath}-${k}`;
-            decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
-            console.log(`Secret ${k} déchiffré avec succès`);
-          }
-        } catch (e) {
-          // Si ce n'est pas du JSON ou si le déchiffrement échoue, utiliser la valeur brute
-          console.log(`Secret ${k} non chiffré ou ancien format, utilisation de la valeur brute`);
-        }
-        
-        const isPwd = k.toLowerCase().includes('password') || k.toLowerCase().includes('pass') || k.toLowerCase().includes('pwd');
-        addField(k, decryptedValue, isPwd);
-      }
-    }
-  } catch (e) {
-    // Si le secret n'existe pas, simplement vider les champs
-    clearSecretFields();
+  // Stocker le chemin de la catégorie actuelle
+  currentCategoryPath = categoryPath;
+  
+  // Charger les cartes depuis Vault
+  if (cardsContainer && cardsView && cardsView.style.display !== 'none') {
+    await loadCardsFromVault(categoryPath);
   }
 }
 
@@ -1954,13 +2383,45 @@ writeBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
 
-  const path = getCurrentPath();
-  if (!path) {
+  const categoryPath = getCurrentPath();
+  if (!categoryPath) {
     showToast('Sélectionnez une catégorie ou créez-en une nouvelle', 'error');
     return;
   }
+
+  // Déterminer le nom du secret (nouveau ou modifié)
+  const newName = detailTitleInput ? detailTitleInput.value.trim() : currentSecretName;
+  if (!newName || newName === 'Nouveau secret' || newName === '') {
+    showToast('Veuillez entrer un nom pour le secret', 'error');
+    if (detailTitleInput) {
+      detailTitleInput.focus();
+    }
+    return;
+  }
+
+  // Vérifier si le nom a changé pour un secret existant
+  let oldSecretPath = null;
+  if (currentSecretName && newName !== currentSecretName && currentSecretName !== 'Nouveau secret') {
+    oldSecretPath = `${categoryPath}/${currentSecretName}`;
+    // Vérifier si l'ancien secret existe
+    try {
+      await readSecret(oldSecretPath);
+      // Si le nouveau nom existe déjà, demander confirmation
+      try {
+        await readSecret(`${categoryPath}/${newName}`);
+        if (!confirm(`Un secret avec le nom "${newName}" existe déjà. Voulez-vous le remplacer ?`)) {
+          return;
+        }
+      } catch (e) {
+        // Le nouveau nom n'existe pas, on peut continuer
+      }
+    } catch (e) {
+      // L'ancien secret n'existe pas, continuer normalement
+    }
+  }
+
   const rows = Array.from(secretTableBody.querySelectorAll('tr'));
-  const obj = {};
+  const keyValueList = [];
   
   // Chiffrer les valeurs des secrets avant de les sauvegarder
   for (const row of rows) {
@@ -1970,10 +2431,13 @@ writeBtn.addEventListener('click', async () => {
     if (key) {
       // Chiffrer la valeur avec le système de chiffrement
       try {
-        const context = `vault-secret-${path}-${key}`;
+        const context = `vault-secret-${categoryPath}-${newName}-${key}`;
         const encryptedValue = await window.cryptoSystem.encryptSecret(val, currentPin, context);
-        // Stocker l'objet chiffré en JSON
-        obj[key] = JSON.stringify(encryptedValue);
+        // Stocker l'objet chiffré directement (pas de JSON.stringify, Vault le fera)
+        keyValueList.push({
+          key: key,
+          value: encryptedValue
+        });
         console.log(`Secret ${key} chiffré avec succès`);
       } catch (error) {
         console.error(`Erreur lors du chiffrement de ${key}:`, error);
@@ -1983,30 +2447,38 @@ writeBtn.addEventListener('click', async () => {
     }
   }
 
+  if (keyValueList.length === 0) {
+    showToast('Aucun champ à sauvegarder', 'error');
+    return;
+  }
+
   try {
-    // Vérifier si le secret existe déjà dans Vault
-    let secretExists = false;
+    // Lire le secret de la catégorie existant (qui contient tous les secrets de cette catégorie)
+    let categoryData = {};
     try {
-      await readSecret(path);
-      secretExists = true;
+      const res = await readSecret(categoryPath);
+      categoryData = (res && res.data && res.data.data) || {};
     } catch (e) {
-      secretExists = false;
+      // La catégorie n'existe pas encore, créer un nouvel objet
+      categoryData = {};
     }
 
-    // Si le secret n'existe pas et qu'il n'y a pas de champs, ne rien faire
-    if (!secretExists && Object.keys(obj).length === 0) {
-      showToast('Le secret a été supprimé. Ajoutez des champs pour créer un nouveau secret.', 'info');
-      return;
+    // Si le nom a changé, supprimer l'ancien secret de l'objet
+    if (oldSecretPath && currentSecretName && currentSecretName !== 'Nouveau secret') {
+      const oldSecretName = currentSecretName;
+      if (categoryData[oldSecretName]) {
+        delete categoryData[oldSecretName];
+      }
     }
 
-    // Si le secret existe mais qu'il n'y a pas de champs, c'est une erreur
-    if (secretExists && Object.keys(obj).length === 0) {
-      showToast('Aucun champ à sauvegarder', 'error');
-      return;
-    }
+    // Ajouter ou mettre à jour le secret dans l'objet de la catégorie
+    categoryData[newName] = keyValueList;
 
-    // Écrire le secret (cela crée le dossier passwords/nom_de_la_categorie si c'est le premier secret)
-    await writeSecret(path, obj);
+    // Sauvegarder tout l'objet de la catégorie
+    await writeSecret(categoryPath, categoryData);
+    
+    // Mettre à jour le nom actuel
+    currentSecretName = newName;
 
     // Attendre un peu pour que Vault mette à jour
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -2016,13 +2488,19 @@ writeBtn.addEventListener('click', async () => {
 
     // S'assurer que la catégorie est toujours sélectionnée après rechargement et recharger les secrets
     setTimeout(async () => {
-      if (categories.includes(path)) {
-        categorySelect.value = path;
-        await loadCategorySecrets(path);
+      if (categories.includes(categoryPath)) {
+        categorySelect.value = categoryPath;
+        // Recharger les cartes depuis Vault pour s'assurer qu'elles sont synchronisées
+        if (cardsView && cardsView.style.display !== 'none') {
+          await loadCardsFromVault(categoryPath);
+        }
       }
     }, 100);
 
     showToast('Secret sauvegardé avec succès (chiffré)', 'success');
+    
+    // Revenir à la vue des cartes après sauvegarde
+    navigateToCards();
   } catch (e) {
     showToast('Erreur: ' + (e.response?.errors?.[0] || e.message), 'error');
   }
@@ -2032,93 +2510,64 @@ deleteBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
 
-  const path = getCurrentPath();
-  if (!path) {
+  const categoryPath = getCurrentPath();
+  if (!categoryPath) {
     showToast('Sélectionnez une catégorie', 'error');
     return;
   }
-  if (!confirm(`Supprimer la metadata du secret "${path}" ? Cette action peut être irréversible.`)) return;
+
+  if (!currentSecretName) {
+    showToast('Aucun secret sélectionné', 'error');
+    return;
+  }
+
+  if (!confirm(`Supprimer le secret "${currentSecretName}" ? Cette action peut être irréversible.`)) return;
   try {
-    // Vérifier si le secret existe avant suppression
-    let secretExistsBefore = false;
+    // Lire le secret de la catégorie (qui contient tous les secrets)
+    let categoryData = {};
     try {
-      await readSecret(path);
-      secretExistsBefore = true;
+      const res = await readSecret(categoryPath);
+      categoryData = (res && res.data && res.data.data) || {};
     } catch (e) {
-      secretExistsBefore = false;
+      showToast('La catégorie n\'existe pas', 'error');
+      return;
     }
 
-    if (!secretExistsBefore) {
+    // Vérifier si le secret existe
+    if (!categoryData[currentSecretName]) {
       showToast('Le secret n\'existe pas', 'error');
       return;
     }
 
-    // Supprimer le secret complètement
-    await deleteSecretCompletely(path);
+    // Supprimer seulement la clé du secret dans l'objet de la catégorie
+    delete categoryData[currentSecretName];
 
-    // Vérifier s'il reste des secrets dans la catégorie après suppression
-    await new Promise(resolve => setTimeout(resolve, 300)); // Attendre que Vault mette à jour
+    // Sauvegarder l'objet de la catégorie mis à jour
+    await writeSecret(categoryPath, categoryData);
 
-    // Vérifier si le secret principal existe encore
-    let secretExistsAfter = false;
-    try {
-      await readSecret(path);
-      secretExistsAfter = true;
-    } catch (e) {
-      secretExistsAfter = false;
-    }
+    // Attendre un peu pour que Vault mette à jour
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Lister tous les secrets dans le dossier de la catégorie (sous-dossiers)
-    let hasSubSecrets = false;
-    try {
-      const subSecrets = await listAllSecretsInCategory(path);
-      // Filtrer pour exclure le fichier categories s'il existe dans la liste
-      const realSubSecrets = subSecrets.filter(s => {
-        const secretName = s.endsWith('/') ? s.slice(0, -1) : s;
-        return secretName !== 'categories';
-      });
-      hasSubSecrets = realSubSecrets.length > 0;
-    } catch (e) {
-      // Si on ne peut pas lister, considérer qu'il n'y a pas de sous-secrets
-      hasSubSecrets = false;
-    }
-
-    // Si c'était le dernier secret (pas de secret principal et pas de sous-secrets), supprimer le dossier
-    if (!secretExistsAfter && !hasSubSecrets) {
-      // Supprimer tous les secrets restants dans le dossier (s'il y en a)
-      try {
-        const remainingSecrets = await listAllSecretsInCategory(path);
-        for (const secret of remainingSecrets) {
-          const secretPath = secret.endsWith('/')
-            ? `${path}/${secret.slice(0, -1)}`
-            : `${path}/${secret}`;
-          try {
-            await deleteSecretCompletely(secretPath);
-          } catch (e) {
-            console.warn(`Impossible de supprimer ${secretPath}:`, e);
-          }
-        }
-        // Attendre un peu pour que Vault mette à jour
-        await new Promise(resolve => setTimeout(resolve, 300));
-      } catch (e) {
-        console.warn('Erreur lors de la suppression du dossier de la catégorie:', e);
-      }
-      showToast('Dernier secret supprimé, dossier de la catégorie supprimé', 'success');
-    } else {
-      showToast('Suppression réussie', 'success');
-    }
+    showToast('Suppression réussie', 'success');
 
     clearSecretFields();
+    currentSecretName = null;
 
     // Recharger les catégories
     await loadCategoriesFromVault();
     // S'assurer que la catégorie est toujours sélectionnée si elle existe dans le fichier categories
     setTimeout(async () => {
-      if (categories.includes(path)) {
-        categorySelect.value = path;
-        await loadCategorySecrets(path);
+      if (categories.includes(categoryPath)) {
+        categorySelect.value = categoryPath;
+        // Recharger les cartes depuis Vault après suppression
+        if (cardsView && cardsView.style.display !== 'none') {
+          await loadCardsFromVault(categoryPath);
+        }
       }
     }, 100);
+    
+    // Revenir à la vue des cartes après suppression
+    navigateToCards();
   } catch (e) {
     showToast('Erreur: ' + (e.response?.errors?.[0] || e.message), 'error');
   }
@@ -2485,7 +2934,14 @@ function getCurrentPath() {
 // Écouter les changements de catégorie pour charger automatiquement les secrets
 categorySelect.addEventListener('change', async () => {
   const path = getCurrentPath();
+  // Revenir à la vue des cartes quand on change de catégorie
+  if (cardsView && detailView) {
+    detailView.style.display = 'none';
+    cardsView.style.display = 'flex';
+  }
+  // Charger les secrets dans le tableau ET les cartes depuis Vault
   await loadCategorySecrets(path);
+  await loadCardsFromVault(path);
 });
 
 // Gestion du bouton nouvelle catégorie

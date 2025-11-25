@@ -11,103 +11,151 @@
 <body>
   <div class="container">
     <header>
-      <h1>Vault</h1>
-      <a id="optionsLink" href="#" title="Options" class="icon-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path
-            d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24">
-          </path>
-        </svg>
-      </a>
-    </header>
-    <section class="controls">
-      <div style="display: flex; gap: 6px; align-items: center;">
-        <select id="categorySelect" style="flex: 1;">
-          <option value="">Chargement...</option>
-        </select>
-        <button id="newCategoryBtn" class="btn-icon" title="Nouvelle catégorie">
+      <div class="header-left">
+        <div class="logo">V</div>
+        <h1>Coffre</h1>
+      </div>
+      <div class="header-right">
+        <button id="createBtn" class="btn-header btn-create">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
+          Créer
         </button>
-        <button id="deleteCategoryBtn" class="btn-icon" title="Supprimer la catégorie">
+        <button id="typeBtn" class="btn-header btn-type">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
+          Type
         </button>
       </div>
-      <div class="button-group">
-        <button id="writeBtn" class="btn btn-sm btn-primary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
+    </header>
+    <div class="main-layout">
+      <aside class="sidebar">
+        <div class="search-container">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
           </svg>
-          Sauvegarder
-        </button>
-        <button id="deleteBtn" class="btn btn-sm btn-danger">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          <input type="text" id="searchInput" placeholder="Rechercher" class="search-input">
+        </div>
+        <div class="category-container">
+          <select id="categorySelect" class="category-select">
+            <option value="">Chargement...</option>
+          </select>
+          <svg class="category-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
-          Supprimer
-        </button>
-      </div>
-    </section>
-    <section class="secret-area">
-      <div class="table-header">
-        <span class="table-title">Champs</span>
-        <div class="table-actions">
-          <button id="copyAllBtn" class="btn-icon" title="Copier tout">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          </button>
-          <button id="newEntryBtn" class="btn-icon" title="Nouvelle entrée">
+        </div>
+        <div class="sidebar-actions">
+          <button id="newCategoryBtn" class="btn-icon" title="Nouvelle catégorie">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
+          <button id="deleteCategoryBtn" class="btn-icon" title="Supprimer la catégorie">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
         </div>
-      </div>
-      <div id="secretTableContainer">
-        <table id="secretTable">
-          <thead>
-            <tr>
-              <th>Clé</th>
-              <th>Valeur</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="secretTableBody">
-          </tbody>
-        </table>
-      </div>
-      <div class="actions">
-        <button id="addFieldBtn" class="btn btn-sm btn-secondary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          Ajouter champ
-        </button>
-        <button id="generateBtn" class="btn btn-sm btn-secondary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path
-              d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
-            </path>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-          </svg>
-          Générer mot de passe
-        </button>
-      </div>
-    </section>
+      </aside>
+      <main class="content-area">
+        <!-- Vue liste des cartes -->
+        <div id="cardsView" class="view-container">
+          <div id="cardsContainer" class="cards-container">
+            <!-- Les cartes seront générées dynamiquement ici -->
+          </div>
+          <footer class="footer">
+            <span id="itemsCount" class="items-count">0 éléments affichés</span>
+            <div class="footer-actions">
+              <button id="generateBtn" class="btn-footer">
+                Générateur
+              </button>
+              <button id="settingsBtn" class="btn-footer">
+                Paramètres
+              </button>
+            </div>
+          </footer>
+        </div>
+        
+        <!-- Vue détail du secret -->
+        <div id="detailView" class="view-container" style="display: none;">
+          <div class="detail-header">
+            <button id="backBtn" class="btn-back">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+              Retour
+            </button>
+            <input type="text" id="detailTitleInput" class="detail-title-input" placeholder="Nom du secret" value="Nouveau secret">
+          </div>
+          <div class="detail-content">
+            <div class="table-header">
+              <span class="table-title">Informations</span>
+              <div class="table-actions">
+                <button id="copyAllBtn" class="btn-icon" title="Copier tout">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+                <button id="newEntryBtn" class="btn-icon" title="Nouvelle entrée">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div id="secretTableContainer" class="secret-table-container" style="display: block;">
+              <table id="secretTable">
+                <thead>
+                  <tr>
+                    <th>Clé</th>
+                    <th>Valeur</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="secretTableBody">
+                </tbody>
+              </table>
+            </div>
+            <div class="detail-actions">
+              <button id="addFieldBtn" class="btn btn-sm btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Ajouter champ
+              </button>
+              <button id="writeBtn" class="btn btn-sm btn-primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                  <polyline points="7 3 7 8 15 8"></polyline>
+                </svg>
+                Sauvegarder
+              </button>
+              <button id="deleteBtn" class="btn btn-sm btn-danger">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <!-- Section cachée pour la compatibilité -->
+    <div style="display: none;">
+      <a id="optionsLink" href="#" title="Options" class="icon-btn"></a>
+    </div>
     <div id="toast" class="toast"></div>
 
     <!-- Modal de configuration initiale -->
