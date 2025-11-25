@@ -1690,11 +1690,11 @@ function displayCards(secrets) {
     
     const title = document.createElement('div');
     title.className = 'card-title';
-    title.textContent = secret.value || secret.key;
+    title.textContent = secret.key; // Le titre est le nom du secret
     
     const subtitle = document.createElement('div');
     subtitle.className = 'card-subtitle';
-    subtitle.textContent = secret.key;
+    subtitle.textContent = secret.type || 'Clés'; // Le sous-titre est le type (par défaut "Clés")
     
     content.appendChild(title);
     content.appendChild(subtitle);
@@ -1849,6 +1849,7 @@ async function loadCardsFromVault(categoryPath) {
         key: secretName,
         value: mainValue,
         displayKey: displayKey,
+        type: 'Clés', // Type par défaut (pour le moment, seul type existant)
         path: categoryPath // Le path est maintenant juste la catégorie
       });
     }
