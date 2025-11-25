@@ -4,7 +4,7 @@ const newCategoryBtn = document.getElementById('newCategoryBtn');
 const deleteCategoryBtn = document.getElementById('deleteCategoryBtn');
 const writeBtn = document.getElementById('writeBtn');
 const deleteBtn = document.getElementById('deleteBtn');
-const addFieldBtn = document.getElementById('addFieldBtn');
+// const addFieldBtn = document.getElementById('addFieldBtn'); // Bouton supprimé
 const generateBtn = document.getElementById('generateBtn');
 const newEntryBtn = document.getElementById('newEntryBtn');
 const copyAllBtn = document.getElementById('copyAllBtn');
@@ -1649,6 +1649,7 @@ async function ensureAuthenticated() {
 
 // utilitaires pour gestion UI
 let currentSecrets = []; // Stocker les secrets actuels pour la recherche
+let selectedType = null; // Type sélectionné pour le filtre (null = tous)
 
 function clearSecretFields() {
   secretTableBody.innerHTML = '';
@@ -1667,12 +1668,17 @@ function displayCards(secrets) {
   currentSecrets = secrets;
   
   const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
-  const filteredSecrets = searchTerm 
+  let filteredSecrets = searchTerm 
     ? secrets.filter(s => 
         s.key.toLowerCase().includes(searchTerm) || 
         s.value.toLowerCase().includes(searchTerm)
       )
     : secrets;
+  
+  // Filtrer par type si un type est sélectionné
+  if (selectedType) {
+    filteredSecrets = filteredSecrets.filter(s => (s.type || 'Clés') === selectedType);
+  }
   
   filteredSecrets.forEach((secret, index) => {
     const card = document.createElement('div');
@@ -1877,7 +1883,7 @@ function convertTableToCards() {
 }
 
 // Fonction pour naviguer vers la vue de détail
-async function navigateToDetail(secret, index, isNew = false) {
+async function navigateToDetail(secret, index, isNew = false, withGeneratedPassword = false) {
   if (!cardsView || !detailView) return;
   
   // Masquer la vue des cartes et afficher la vue de détail
@@ -1893,8 +1899,16 @@ async function navigateToDetail(secret, index, isNew = false) {
       detailTitle.textContent = 'Nouveau secret';
     }
     clearSecretFields();
-    // Ajouter le champ "Mot de passe" par défaut avec une valeur vide
-    addField('Mot de passe', '', true);
+    // Ajouter le champ "Mot de passe" par défaut
+    if (withGeneratedPassword) {
+      // Pré-remplir avec un mot de passe généré
+      const generatedPassword = generatePassword(16);
+      addField('Mot de passe', generatedPassword, true);
+      showToast('Mot de passe généré', 'success');
+    } else {
+      // Ajouter le champ "Mot de passe" par défaut avec une valeur vide
+      addField('Mot de passe', '', true);
+    }
   } else if (secret) {
     // Secret existant - charger les données du secret spécifique
     currentSecretName = secret.key;
@@ -2214,17 +2228,18 @@ copyAllBtn.addEventListener('click', async () => {
   }
 });
 
-addFieldBtn.addEventListener('click', () => {
-  addField();
-  showToast('Champ ajouté', 'success');
-  // Ne pas mettre à jour les cartes - elles doivent toujours refléter Vault
-});
+// Event listener supprimé - le bouton "Ajouter champ" a été retiré
+// Utiliser le bouton "Nouvelle entrée" dans le header de la table à la place
 
 generateBtn.addEventListener('click', () => {
-  const pw = generatePassword(16);
-  addField('password', pw, true);
-  showToast('Mot de passe généré', 'success');
-  // Ne pas mettre à jour les cartes - elles doivent toujours refléter Vault
+  // Vérifier qu'une catégorie est sélectionnée
+  const path = getCurrentPath();
+  if (!path) {
+    showToast('Sélectionnez d\'abord une catégorie', 'error');
+    return;
+  }
+  // Naviguer vers la vue de détail pour créer un nouveau secret avec mot de passe généré
+  navigateToDetail(null, -1, true, true);
 });
 
 // Event listeners pour les nouveaux éléments
@@ -2250,10 +2265,92 @@ if (createBtn) {
 }
 
 if (typeBtn) {
-  typeBtn.addEventListener('click', () => {
-    // Pour l'instant, afficher un message
-    showToast('Fonction Type à implémenter', 'info');
+  typeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showTypeFilterMenu();
   });
+}
+
+// Fonction pour afficher le menu de filtre par type
+function showTypeFilterMenu() {
+  // Extraire les types uniques des secrets actuels
+  const types = new Set();
+  currentSecrets.forEach(secret => {
+    const type = secret.type || 'Clés';
+    types.add(type);
+  });
+  
+  const typesArray = Array.from(types).sort();
+  
+  // Créer le menu déroulant
+  const existingMenu = document.getElementById('typeFilterMenu');
+  if (existingMenu) {
+    existingMenu.remove();
+    return;
+  }
+  
+  const menu = document.createElement('div');
+  menu.id = 'typeFilterMenu';
+  menu.className = 'type-filter-menu';
+  
+  // Option "Tous"
+  const allOption = document.createElement('div');
+  allOption.className = 'type-filter-option' + (selectedType === null ? ' active' : '');
+  allOption.textContent = 'Tous';
+  allOption.addEventListener('click', () => {
+    selectedType = null;
+    updateTypeButtonText();
+    displayCards(currentSecrets);
+    menu.remove();
+  });
+  menu.appendChild(allOption);
+  
+  // Options pour chaque type
+  typesArray.forEach(type => {
+    const option = document.createElement('div');
+    option.className = 'type-filter-option' + (selectedType === type ? ' active' : '');
+    option.textContent = type;
+    option.addEventListener('click', () => {
+      selectedType = type;
+      updateTypeButtonText();
+      displayCards(currentSecrets);
+      menu.remove();
+    });
+    menu.appendChild(option);
+  });
+  
+  // Positionner le menu sous le bouton
+  const rect = typeBtn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  menu.style.zIndex = '1000';
+  
+  document.body.appendChild(menu);
+  
+  // Fermer le menu si on clique ailleurs
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target) && e.target !== typeBtn && !typeBtn.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu);
+  }, 0);
+}
+
+// Fonction pour mettre à jour le texte du bouton Type
+function updateTypeButtonText() {
+  if (typeBtn) {
+    let buttonText = typeBtn.querySelector('span');
+    if (!buttonText) {
+      // Créer un span si il n'existe pas
+      buttonText = document.createElement('span');
+      typeBtn.appendChild(buttonText);
+    }
+    buttonText.textContent = selectedType ? `Type: ${selectedType}` : 'Type';
+  }
 }
 
 if (settingsBtn) {
