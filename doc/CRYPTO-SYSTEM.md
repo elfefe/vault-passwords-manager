@@ -8,16 +8,28 @@ Ce gestionnaire de mots de passe implémente un système de chiffrement à plusi
 
 ### 1. Master Key (Clé Maîtresse)
 
-La **Master Key** est une clé de 256 bits (32 bytes) générée de manière cryptographiquement sécurisée lors de la première configuration.
+La **Master Key** est une clé de 256 bits (32 bytes) **dérivée depuis un mot de passe utilisateur** en utilisant **PBKDF2** (100 000 itérations, SHA-256).
 
-**Génération :**
+**Dérivation :**
 ```javascript
-const masterKey = crypto.getRandomValues(new Uint8Array(32));
+// Le mot de passe utilisateur (minimum 12 caractères) est utilisé pour dériver la Master Key
+const { key: masterKey, salt } = await deriveMasterKeyFromPassword(
+  password,      // Mot de passe utilisateur
+  userId,        // kvMount/entity_name pour sel déterministe
+  100000,        // Itérations PBKDF2
+  32             // 256 bits
+);
 ```
 
+**Sel déterministe :**
+- Le sel est généré de manière **déterministe** à partir du `kvMount` (entity_name) de l'utilisateur
+- Cela garantit que le même mot de passe + le même `kvMount` produisent toujours la même Master Key
+- **Avantage** : Les données peuvent être récupérées après réinstallation de l'extension avec le même mot de passe et `kvMount`
+
 **Stockage :**
-- La Master Key est chiffrée avec votre **PIN à 4 chiffres** (en utilisant AES-GCM)
+- La Master Key dérivée est chiffrée avec votre **PIN à 4 chiffres** (en utilisant AES-GCM)
 - Elle est stockée dans `chrome.storage.local` sous forme chiffrée
+- Le sel est également stocké (pour référence, mais peut être régénéré de manière déterministe)
 - Elle n'est jamais stockée en clair
 
 ### 2. Dérivation de Sous-Clés avec BLAKE3
@@ -55,6 +67,25 @@ Chaque valeur de secret est chiffrée avec **ChaCha20-Poly1305**, un algorithme 
 }
 ```
 
+## Flux d'Initialisation
+
+### Configuration Initiale
+
+```
+1. Récupération du token Vault
+   ↓
+2. Création du mot de passe Master Key (minimum 12 caractères)
+   ↓
+3. Dérivation de la Master Key depuis le mot de passe avec PBKDF2
+   - Sel déterministe généré depuis le kvMount (entity_name)
+   ↓
+4. Création du PIN (4 chiffres)
+   ↓
+5. Chiffrement de la Master Key avec le PIN (AES-GCM)
+   ↓
+6. Stockage de la Master Key chiffrée dans chrome.storage.local
+```
+
 ## Flux de Chiffrement/Déchiffrement
 
 ### Chiffrement d'un Secret
@@ -62,9 +93,9 @@ Chaque valeur de secret est chiffrée avec **ChaCha20-Poly1305**, un algorithme 
 ```
 1. PIN utilisateur (4 chiffres)
    ↓
-2. Déchiffrement de la Master Key
+2. Déchiffrement de la Master Key (stockée et chiffrée)
    ↓
-3. Dérivation de la sous-clé avec contexte unique
+3. Dérivation de la sous-clé avec contexte unique (BLAKE3)
    ↓
 4. Chiffrement de la valeur avec ChaCha20-Poly1305
    ↓
@@ -76,9 +107,9 @@ Chaque valeur de secret est chiffrée avec **ChaCha20-Poly1305**, un algorithme 
 ```
 1. PIN utilisateur (4 chiffres)
    ↓
-2. Déchiffrement de la Master Key
+2. Déchiffrement de la Master Key (stockée et chiffrée)
    ↓
-3. Dérivation de la même sous-clé avec le même contexte
+3. Dérivation de la même sous-clé avec le même contexte (BLAKE3)
    ↓
 4. Vérification du tag d'authentification
    ↓
@@ -97,8 +128,10 @@ Implémentation pure JavaScript de ChaCha20-Poly1305 pour le chiffrement authent
 
 ### `/crypto-system.js`
 Module principal qui orchestre :
-- Génération et stockage de la Master Key
-- Dérivation de sous-clés
+- Dérivation de la Master Key depuis un mot de passe utilisateur (PBKDF2)
+- Génération de sel déterministe basé sur le kvMount
+- Stockage de la Master Key chiffrée
+- Dérivation de sous-clés (BLAKE3)
 - API de chiffrement/déchiffrement de secrets
 
 ### `/crypto-utils.js`
@@ -111,8 +144,25 @@ Fonctions utilitaires pour :
 ### Initialisation
 
 ```javascript
-// Lors de la première configuration (création du PIN)
-await window.cryptoSystem.initializeCryptoSystem(pin);
+// Lors de la première configuration (création du mot de passe Master Key et PIN)
+await window.cryptoSystem.initializeCryptoSystem(
+  password,  // Mot de passe Master Key (minimum 12 caractères)
+  pin,       // PIN à 4 chiffres
+  userId     // kvMount/entity_name (optionnel, récupéré depuis storage si non fourni)
+);
+```
+
+### Dérivation de la Master Key
+
+```javascript
+// Dériver une Master Key depuis un mot de passe
+const { key: masterKey, salt } = await window.cryptoSystem.deriveMasterKeyFromPassword(
+  password,  // Mot de passe utilisateur
+  userId,    // kvMount/entity_name pour sel déterministe
+  salt,      // Sel (optionnel, généré de manière déterministe si userId fourni)
+  100000,    // Itérations PBKDF2
+  32         // Taille en bytes (256 bits)
+);
 ```
 
 ### Chiffrement d'un Secret
@@ -149,15 +199,28 @@ const exists = await window.cryptoSystem.hasMasterKey();
 await window.cryptoSystem.changePinAndReencryptMasterKey(oldPin, newPin);
 ```
 
+### Changer le Mot de passe Master Key
+
+```javascript
+await window.cryptoSystem.changeMasterPassword(
+  oldPassword,  // Ancien mot de passe
+  newPassword,  // Nouveau mot de passe
+  pin,          // PIN actuel
+  userId        // kvMount/entity_name (optionnel)
+);
+```
+
 ## Sécurité
 
 ### ✅ Ce qui est sécurisé
 
-- **Master Key** : Générée aléatoirement avec 256 bits d'entropie
-- **Dérivation déterministe** : Chaque secret a sa propre sous-clé unique
+- **Master Key** : Dérivée depuis un mot de passe utilisateur avec PBKDF2 (100 000 itérations, SHA-256)
+- **Sel déterministe** : Basé sur le kvMount (entity_name) pour garantir la reproductibilité
+- **Dérivation déterministe** : Chaque secret a sa propre sous-clé unique (BLAKE3)
 - **Chiffrement authentifié** : ChaCha20-Poly1305 empêche les modifications
 - **PIN protégé** : Le PIN est hasché (SHA-256) avant stockage
 - **Stockage chiffré** : Tout est chiffré dans chrome.storage.local
+- **Récupération après réinstallation** : Le même mot de passe + kvMount permet de recréer la même Master Key
 - **Compatibilité rétroactive** : Les anciens secrets non chiffrés restent accessibles
 
 ### ⚠️ Limitations
@@ -166,12 +229,26 @@ await window.cryptoSystem.changePinAndReencryptMasterKey(oldPin, newPin);
 - **Master Key en mémoire** : Pendant la session, elle est déchiffrée en RAM
 - **Pas de rotation automatique** : La Master Key ne change pas automatiquement
 - **Dépendance au PIN** : Si vous oubliez le PIN, tous les secrets sont perdus
+- **Dépendance au mot de passe** : Si vous oubliez le mot de passe Master Key, tous les secrets sont perdus
+- **Mot de passe minimum** : 12 caractères requis pour une sécurité suffisante
 
 ## Migration des Secrets Existants
 
 Les secrets existants stockés en clair dans Vault restent **accessibles en lecture** mais seront automatiquement **re-chiffrés lors de la prochaine sauvegarde**.
 
 Le système détecte automatiquement si une valeur est chiffrée (format JSON avec `iv`, `ciphertext`, `tag`) ou en clair.
+
+## Récupération après Réinstallation
+
+Grâce au **sel déterministe** basé sur le `kvMount` (entity_name), vous pouvez récupérer vos secrets après réinstallation de l'extension :
+
+1. **Réinstallez l'extension**
+2. **Configurez avec le même token Vault** (même `kvMount`/entity_name)
+3. **Utilisez le même mot de passe Master Key** (minimum 12 caractères)
+4. **Utilisez le même PIN** (4 chiffres)
+5. **La même Master Key sera générée** et vos secrets seront accessibles
+
+**Important** : Seuls les secrets créés avec le système de sel déterministe (après cette mise à jour) peuvent être récupérés. Les anciens secrets créés avec un sel aléatoire ne seront pas accessibles après réinstallation.
 
 ## Comparaison avec AES-GCM
 
@@ -204,7 +281,19 @@ Pour tester le système :
 ### "Master key not initialized"
 
 - La Master Key n'a pas été créée lors de la première configuration
-- Réinitialisez l'extension et créez un nouveau PIN
+- Réinitialisez l'extension et créez un nouveau mot de passe Master Key + PIN
+
+### "Le mot de passe doit contenir au moins 12 caractères"
+
+- Le mot de passe Master Key doit contenir au moins 12 caractères pour des raisons de sécurité
+- Utilisez un mot de passe fort avec majuscules, minuscules, chiffres et symboles
+
+### Impossible de déchiffrer après réinstallation
+
+- Vérifiez que vous utilisez le **même mot de passe Master Key**
+- Vérifiez que vous utilisez le **même kvMount** (entity_name)
+- Vérifiez que vous utilisez le **même PIN**
+- Les secrets créés avec l'ancien système (sel aléatoire) ne peuvent pas être récupérés
 
 ### Secrets en clair dans Vault
 
@@ -218,8 +307,18 @@ Pour tester le système :
 - [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API)
 - [HashiCorp Vault](https://www.vaultproject.io/)
 
+## Comparaison : Ancien vs Nouveau Système
+
+| Caractéristique | Ancien Système | Nouveau Système |
+|----------------|----------------|-----------------|
+| Master Key | Générée aléatoirement | Dérivée depuis mot de passe (PBKDF2) |
+| Sel | Aléatoire (stocké) | Déterministe (basé sur kvMount) |
+| Récupération après réinstallation | ❌ Impossible | ✅ Possible (même mot de passe + kvMount) |
+| Mot de passe utilisateur | ❌ Non requis | ✅ Requis (minimum 12 caractères) |
+| Flux d'initialisation | Token → PIN → Master Key | Token → Mot de passe → PIN → Master Key |
+
 ---
 
-**Version :** 1.1  
-**Dernière mise à jour :** Novembre 2024
+**Version :** 2.0  
+**Dernière mise à jour :** Décembre 2024
 

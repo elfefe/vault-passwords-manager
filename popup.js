@@ -2285,14 +2285,38 @@ copyAllBtn.addEventListener('click', async () => {
 // Utiliser le bouton "Nouvelle entrée" dans le header de la table à la place
 
 generateBtn.addEventListener('click', () => {
-  // Vérifier qu'une catégorie est sélectionnée
-  const path = getCurrentPath();
-  if (!path) {
-    showToast('Sélectionnez d\'abord une catégorie', 'error');
+  // Vérifier qu'on est dans la vue détaillée
+  if (!detailView || detailView.style.display === 'none') {
+    showToast('Ouvrez d\'abord un secret', 'error');
     return;
   }
-  // Naviguer vers la vue de détail pour créer un nouveau secret avec mot de passe généré
-  navigateToDetail(null, -1, true, true);
+  
+  // Récupérer tous les labels existants dans le tableau
+  const rows = Array.from(secretTableBody.querySelectorAll('tr'));
+  const existingLabels = new Set();
+  rows.forEach(row => {
+    const keyInput = row.querySelector('td:first-child input');
+    if (keyInput && keyInput.value.trim()) {
+      existingLabels.add(keyInput.value.trim());
+    }
+  });
+  
+  // Trouver le prochain nom disponible
+  let fieldName = 'Mot de passe';
+  if (existingLabels.has(fieldName)) {
+    let n = 1;
+    while (existingLabels.has(`${fieldName} ${n}`)) {
+      n++;
+    }
+    fieldName = `${fieldName} ${n}`;
+  }
+  
+  // Générer un mot de passe
+  const generatedPassword = generatePassword(16);
+  
+  // Ajouter le champ avec le mot de passe généré
+  addField(fieldName, generatedPassword, true);
+  showToast('Mot de passe généré', 'success');
 });
 
 // Event listeners pour les nouveaux éléments

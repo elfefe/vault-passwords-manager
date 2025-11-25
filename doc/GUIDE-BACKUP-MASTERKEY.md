@@ -1,8 +1,10 @@
-# 🔐 Guide de Backup de la Master Key
+# 🔐 Guide de Backup du Mot de passe Master Key
 
-## Pourquoi Sauvegarder la Master Key ?
+## Pourquoi Sauvegarder le Mot de passe Master Key ?
 
-La **Master Key** est la clé qui permet de déchiffrer tous vos secrets. Si vous la perdez (par exemple en réinitialisant l'extension ou en changeant d'ordinateur), **tous vos secrets deviendront inaccessibles définitivement**.
+Le **mot de passe Master Key** est utilisé pour dériver la clé qui permet de déchiffrer tous vos secrets. Si vous l'oubliez (par exemple en réinitialisant l'extension ou en changeant d'ordinateur), **tous vos secrets deviendront inaccessibles définitivement**.
+
+**Note importante** : Grâce au système de sel déterministe, vous pouvez récupérer vos secrets après réinstallation en utilisant le même mot de passe Master Key et le même `kvMount` (entity_name). Cependant, il est **fortement recommandé** d'exporter le mot de passe pour plus de sécurité.
 
 ### Situations où vous aurez besoin du backup :
 
@@ -14,7 +16,7 @@ La **Master Key** est la clé qui permet de déchiffrer tous vos secrets. Si vou
 
 ---
 
-## 📥 Export de la Master Key
+## 📥 Export du Mot de passe Master Key
 
 ### Étapes
 
@@ -22,44 +24,48 @@ La **Master Key** est la clé qui permet de déchiffrer tous vos secrets. Si vou
    - Faites un clic droit sur l'icône de l'extension → "Options"
    - Ou allez dans `chrome://extensions/` → Vault Password Manager → "Options"
 
-2. **Allez dans la section "Gestion de la Master Key"**
+2. **Allez dans la section "Gestion du Mot de passe Master Key"**
    - Faites défiler vers le bas
 
-3. **Cliquez sur "📥 Télécharger Master Key"**
-   - Un modal s'ouvre pour demander votre PIN
+3. **Cliquez sur "📥 Exporter le mot de passe"**
+   - Un modal s'ouvre pour demander votre mot de passe Master Key
 
-4. **Entrez votre PIN à 4 chiffres**
-   - C'est le même PIN que vous utilisez pour déverrouiller l'extension
+4. **Entrez votre mot de passe Master Key**
+   - C'est le mot de passe que vous avez créé lors de la configuration initiale
+   - Minimum 12 caractères
 
-5. **Le fichier est téléchargé**
-   - Nom du fichier : `vault-master-key-{timestamp}.txt`
+5. **Entrez votre PIN à 4 chiffres**
+   - Pour vérifier votre identité
+
+6. **Le fichier est téléchargé**
+   - Nom du fichier : `vault-master-password-{timestamp}.txt`
    - Format : JSON avec métadonnées
 
 ### Format du Fichier Exporté
 
 ```json
 {
-  "version": "1.1",
-  "type": "vault-password-manager-master-key",
-  "exportDate": "2024-11-21T10:30:00.000Z",
-  "masterKey": "a1b2c3d4e5f6...64 caractères hexadécimaux...",
+  "version": "2.0",
+  "type": "vault-password-manager-master-password",
+  "exportDate": "2024-12-21T10:30:00.000Z",
+  "masterPassword": "votre-mot-de-passe-en-clair",
   "warning": "HAUTEMENT CONFIDENTIEL - Ne partagez jamais ce fichier"
 }
 ```
 
-La Master Key est stockée en **hexadécimal** (64 caractères = 32 bytes = 256 bits).
+⚠️ **ATTENTION** : Le fichier contient votre mot de passe Master Key **en clair**. Protégez-le absolument !
 
 ---
 
-## 📤 Import de la Master Key
+## 📤 Import du Mot de passe Master Key
 
 ### Étapes
 
 1. **Ouvrez la page de configuration**
 
-2. **Allez dans la section "Gestion de la Master Key"**
+2. **Allez dans la section "Gestion du Mot de passe Master Key"**
 
-3. **Cliquez sur "📤 Importer Master Key"**
+3. **Cliquez sur "📤 Importer le mot de passe"**
    - Un sélecteur de fichier s'ouvre
 
 4. **Sélectionnez votre fichier de backup**
@@ -71,20 +77,22 @@ La Master Key est stockée en **hexadécimal** (64 caractères = 32 bytes = 256 
    - Lisez attentivement avant de confirmer
 
 6. **Entrez votre PIN**
-   - La Master Key sera re-chiffrée avec ce PIN
+   - La Master Key dérivée sera chiffrée avec ce PIN
 
 7. **Import terminé !**
+   - ✅ La Master Key sera dérivée depuis le mot de passe importé
    - ✅ Vous pouvez maintenant déchiffrer vos secrets
 
 ### ⚠️ Avertissements lors de l'Import
 
-L'import d'une Master Key va :
+L'import d'un mot de passe Master Key va :
 
-- ✅ **Remplacer** votre Master Key actuelle (si elle existe)
-- ✅ Vous permettre de **déchiffrer les secrets** créés avec cette Master Key
-- ❌ Rendre **inaccessibles** les secrets créés avec l'ancienne Master Key
+- ✅ **Remplacer** votre mot de passe Master Key actuel (si il existe)
+- ✅ **Dériver une nouvelle Master Key** depuis ce mot de passe
+- ✅ Vous permettre de **déchiffrer les secrets** créés avec ce mot de passe
+- ❌ Rendre **inaccessibles** les secrets créés avec l'ancien mot de passe
 
-**Assurez-vous d'importer la bonne Master Key !**
+**Assurez-vous d'importer le bon mot de passe Master Key !**
 
 ---
 
@@ -92,11 +100,16 @@ L'import d'une Master Key va :
 
 ### Niveau de Sensibilité : 🔴 CRITIQUE
 
-Le fichier de backup contient votre Master Key **en clair** (non chiffrée). Toute personne qui possède ce fichier peut :
+Le fichier de backup contient votre mot de passe Master Key **en clair** (non chiffré). Toute personne qui possède ce fichier peut :
 
-- 🔓 Déchiffrer tous vos secrets stockés dans Vault
+- 🔓 Déchiffrer tous vos secrets stockés dans Vault (si elle a aussi accès à votre compte Vault)
 - 🔓 Créer de nouveaux secrets chiffrés avec votre Master Key
 - 🔓 Usurper votre identité dans le système de chiffrement
+
+**Note** : Pour déchiffrer vos secrets, il faut également :
+- Le mot de passe Master Key (dans le fichier)
+- Le PIN (4 chiffres)
+- L'accès au compte Vault (token)
 
 ### Bonnes Pratiques
 
@@ -148,49 +161,65 @@ Le fichier de backup contient votre Master Key **en clair** (non chiffrée). Tou
 
 **Sur le nouveau ordinateur :**
 1. Installez l'extension Vault Password Manager
-2. **NE CRÉEZ PAS** de nouveau PIN tout de suite
-3. Allez dans Options → Gestion de la Master Key
-4. Importez votre Master Key
-5. Entrez un PIN (peut être le même qu'avant ou un nouveau)
-6. ✅ Tous vos secrets sont accessibles !
+2. Configurez avec le même token Vault (même `kvMount`/entity_name)
+3. **Option A - Avec backup** :
+   - Allez dans Options → Gestion du Mot de passe Master Key
+   - Importez votre mot de passe Master Key
+   - Entrez un PIN (peut être le même qu'avant ou un nouveau)
+4. **Option B - Sans backup** :
+   - Utilisez le même mot de passe Master Key lors de la configuration
+   - Utilisez le même PIN
+   - La même Master Key sera générée grâce au sel déterministe
+5. ✅ Tous vos secrets sont accessibles !
 
 ### Cas 2 : Synchronisation entre Plusieurs Ordinateurs
 
 Si vous voulez utiliser l'extension sur plusieurs ordinateurs avec les **mêmes secrets** :
 
+**Méthode 1 - Avec backup** :
 1. **Ordinateur 1** : Configurez l'extension normalement
-2. **Ordinateur 1** : Exportez la Master Key
+2. **Ordinateur 1** : Exportez le mot de passe Master Key
 3. **Ordinateur 2** : Installez l'extension
-4. **Ordinateur 2** : Importez la Master Key (avant de créer des secrets)
-5. ✅ Les deux ordinateurs utilisent la même Master Key
+4. **Ordinateur 2** : Configurez avec le même token Vault
+5. **Ordinateur 2** : Importez le mot de passe Master Key
+6. ✅ Les deux ordinateurs utilisent la même Master Key
 
-**⚠️ Important :** Utilisez le même token Vault sur les deux ordinateurs.
+**Méthode 2 - Sans backup** :
+1. **Ordinateur 1** : Configurez avec mot de passe Master Key + PIN
+2. **Ordinateur 2** : Installez l'extension
+3. **Ordinateur 2** : Configurez avec le même token Vault
+4. **Ordinateur 2** : Utilisez le même mot de passe Master Key + PIN
+5. ✅ La même Master Key sera générée automatiquement (sel déterministe)
+
+**⚠️ Important :** Utilisez le même token Vault (même `kvMount`/entity_name) sur les deux ordinateurs.
 
 ### Cas 3 : Partage avec une Équipe
 
 Si vous voulez partager des secrets avec une équipe (avec **précautions extrêmes**) :
 
 1. Créez un compte Vault dédié à l'équipe
-2. Exportez la Master Key
-3. Partagez-la de manière **ultra-sécurisée** :
+2. Configurez avec un mot de passe Master Key partagé
+3. Exportez le mot de passe Master Key
+4. Partagez-le de manière **ultra-sécurisée** :
    - En personne
    - Via un canal chiffré de bout en bout (Signal)
    - Via un gestionnaire de mots de passe d'équipe
 
-⚠️ **Attention** : Toute personne ayant la Master Key peut déchiffrer **tous** les secrets. Ne partagez qu'avec des personnes de confiance.
+⚠️ **Attention** : Toute personne ayant le mot de passe Master Key peut déchiffrer **tous** les secrets. Ne partagez qu'avec des personnes de confiance.
 
 ### Cas 4 : Récupération après Perte du PIN
 
-**Situation** : Vous avez oublié votre PIN mais vous avez un backup de la Master Key.
+**Situation** : Vous avez oublié votre PIN mais vous avez un backup du mot de passe Master Key.
 
 **Solution** :
 1. Allez dans Options → "Réinitialiser"
 2. Supprimez toute la configuration
-3. Importez votre Master Key
-4. Créez un **nouveau PIN**
-5. ✅ Vous retrouvez l'accès à vos secrets !
+3. Reconfigurez avec le même token Vault
+4. Importez votre mot de passe Master Key
+5. Créez un **nouveau PIN**
+6. ✅ Vous retrouvez l'accès à vos secrets !
 
-**⚠️ Sans backup de la Master Key** : Si vous perdez le PIN ET que vous n'avez pas de backup, vos secrets sont **perdus définitivement**.
+**⚠️ Sans backup du mot de passe Master Key** : Si vous perdez le PIN ET que vous n'avez pas de backup, vous pouvez toujours récupérer en utilisant le même mot de passe Master Key + token Vault (grâce au sel déterministe).
 
 ---
 
@@ -242,7 +271,7 @@ Avant de considérer votre backup comme sûr, vérifiez :
 
 ### Q : Dois-je re-exporter après chaque modification ?
 
-❌ Non ! La Master Key **ne change jamais** (sauf si vous la régénérez volontairement). Un seul export suffit.
+❌ Non ! Le mot de passe Master Key **ne change jamais** (sauf si vous le changez volontairement). Un seul export suffit.
 
 ### Q : Puis-je changer le PIN sans exporter la Master Key ?
 
@@ -256,11 +285,11 @@ Avant de considérer votre backup comme sûr, vérifiez :
 
 ⚠️ Techniquement oui, mais **très risqué**. Les secrets créés avec la Master Key A ne pourront pas être déchiffrés avec la Master Key B. Utilisez une seule Master Key par instance de l'extension.
 
-### Q : Comment générer une nouvelle Master Key ?
+### Q : Comment changer le mot de passe Master Key ?
 
-Options → Réinitialiser → Créez un nouveau PIN. Une nouvelle Master Key sera générée automatiquement.
+Options → Gestion du Mot de passe Master Key → Utilisez la fonction de changement de mot de passe (à venir) ou réinitialisez complètement l'extension.
 
-⚠️ **Attention** : Les anciens secrets ne pourront plus être déchiffrés !
+⚠️ **Attention** : Si vous changez le mot de passe Master Key, les anciens secrets créés avec l'ancien mot de passe ne pourront plus être déchiffrés !
 
 ---
 
@@ -272,15 +301,16 @@ Options → Réinitialiser → Créez un nouveau PIN. Une nouvelle Master Key se
 - Ouvrez-le avec un éditeur de texte pour vérifier le contenu
 - Assurez-vous qu'il n'a pas été corrompu
 
-### Erreur : "Taille de Master Key invalide"
+### Erreur : "Le mot de passe doit contenir au moins 12 caractères"
 
-- La Master Key doit faire exactement 64 caractères hexadécimaux (32 bytes)
-- Vérifiez que le fichier n'a pas été tronqué
+- Le mot de passe Master Key doit contenir au moins 12 caractères
+- Vérifiez que le fichier contient bien le mot de passe complet
 
 ### Les secrets ne se déchiffrent pas après l'import
 
-- ✅ Vérifiez que c'est bien la bonne Master Key
-- ✅ Vérifiez que les secrets ont été créés avec cette Master Key
+- ✅ Vérifiez que c'est bien le bon mot de passe Master Key
+- ✅ Vérifiez que vous utilisez le même `kvMount` (entity_name)
+- ✅ Vérifiez que les secrets ont été créés avec ce mot de passe Master Key
 - ✅ Regardez la console Chrome (F12) pour voir les erreurs de déchiffrement
 
 ---
