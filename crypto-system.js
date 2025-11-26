@@ -438,6 +438,43 @@ async function initializeCryptoSystem(password, pin, userId = null) {
 }
 
 /**
+ * Initialise le système de chiffrement avec un userId (pour OAuth)
+ * Dérive la master key directement depuis le userId au lieu d'un mot de passe
+ * @param {string} userId - l'identifiant utilisateur unique (entity_name) utilisé comme Master Key
+ * @param {string} pin - le PIN à 4 chiffres pour chiffrer la master key dérivée
+ * @param {string} saltUserId - l'identifiant utilisateur pour générer un sel déterministe (peut être le même que userId)
+ * @returns {Promise<void>}
+ */
+async function initializeCryptoSystemWithUserId(userId, pin, saltUserId = null) {
+  // Vérifier si une master key existe déjà
+  if (await hasMasterKey()) {
+    console.log('✅ Master Key existante détectée - réutilisation au lieu d\'en créer une nouvelle');
+    console.log('ℹ️  La Master Key existante reste chiffrée et peut être utilisée pour déchiffrer vos secrets');
+    return;
+  }
+  
+  // Valider le userId
+  if (!userId) {
+    throw new Error('Le userId est requis pour l\'authentification OAuth');
+  }
+  
+  // Utiliser saltUserId si fourni, sinon userId
+  const saltId = saltUserId || userId;
+  
+  // Dériver la master key depuis le userId avec un sel déterministe
+  console.log('🔑 Dérivation de la Master Key depuis le userId OAuth...');
+  const { key: masterKey, salt } = await deriveMasterKeyFromPassword(userId, saltId);
+  
+  console.log('✅ Master Key dérivée depuis userId (longueur:', masterKey.length, 'bytes)');
+  console.log('✅ Sel déterministe utilisé (basé sur userId:', saltId, ')');
+  
+  // Stocker la master key chiffrée par le PIN (avec le sel pour référence, mais il sera régénéré de manière déterministe)
+  await storeMasterKey(masterKey, pin, salt);
+  
+  console.log('✅ Master Key stockée avec succès et chiffrée avec votre PIN');
+}
+
+/**
  * Change le PIN et re-chiffre la master key
  * @param {string} oldPin - l'ancien PIN
  * @param {string} newPin - le nouveau PIN
@@ -518,6 +555,7 @@ if (typeof window !== 'undefined') {
   window.cryptoSystem = {
     // Gestion de la master key
     initializeCryptoSystem,
+    initializeCryptoSystemWithUserId,
     hasMasterKey,
     loadMasterKey,
     storeMasterKey,

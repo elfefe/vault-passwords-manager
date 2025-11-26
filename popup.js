@@ -51,6 +51,7 @@ let currentPin = null; // PIN stocké en mémoire pendant la session
 let pendingToken = null; // Token en attente de configuration
 let pendingDisplayName = null; // Display name en attente
 let pendingMasterPassword = null; // Mot de passe Master Key en attente
+let pendingIsOAuth = false; // Indique si l'authentification est OAuth (true) ou manuelle (false)
 let categories = []; // Liste des catégories
 const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.googleusercontent.com";
 
@@ -245,7 +246,7 @@ async function regenerateTokenAndSave(vaultUrl, pin) {
         
         // Récupérer les données existantes
         const stored = await new Promise((resolve) => {
-          chrome.storage.local.get(['kvMount'], resolve);
+          chrome.storage.sync.get(['kvMount'], resolve);
         });
         
         // Récupérer l'entity_name si nécessaire
@@ -292,7 +293,7 @@ async function regenerateTokenAndSave(vaultUrl, pin) {
         
         // Sauvegarder le nouveau token
         await new Promise((resolve) => {
-          chrome.storage.local.set(dataToSave, resolve);
+          chrome.storage.sync.set(dataToSave, resolve);
         });
         
         console.log('Token régénéré et sauvegardé avec succès');
@@ -714,8 +715,41 @@ async function regenerateTokenAndSave(vaultUrl, pin) {
                   // Close the popup
                   chrome.windows.remove(popupWindow.id);
 
-                  // Process the token via handleVaultToken (qui va sauvegarder et résoudre la Promise)
-                  await window.handleVaultToken(result.token);
+                  // Process the token OAuth - utiliser la même logique que handleCredentialResponse
+                  // Pour OAuth, on ne doit pas demander de mot de passe
+                  const vaultUrl = settings.vaultUrl || 'https://vault.exem.fr/';
+                  
+                  // Vérifier le token et récupérer l'entity_name
+                  const testResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+                    method: 'GET',
+                    headers: {
+                      'X-Vault-Token': result.token,
+                      'Content-Type': 'application/json'
+                    }
+                  });
+
+                  if (!testResponse.ok) {
+                    throw new Error('Token Vault invalide');
+                  }
+
+                  const entityName = await getEntityNameFromToken(vaultUrl, result.token);
+
+                  // Créer le mount path s'il n'existe pas
+                  let mountPath = settings.kvMount || entityName;
+                  const mountResult = await ensureMountPath(vaultUrl, result.token, mountPath);
+                  if (!mountResult.success) {
+                    const errorMsg = mountResult.message || 'Impossible de créer le mount path';
+                    throw new Error(`Erreur mount: ${errorMsg}`);
+                  }
+
+                  // Token valide et mount créé, stocker temporairement
+                  // Pour OAuth, utiliser directement l'entityName comme Master Key (pas de mot de passe)
+                  pendingToken = result.token;
+                  pendingDisplayName = entityName;
+                  pendingIsOAuth = true; // Authentification OAuth
+                  hideSetupModal();
+                  // Passer directement au modal PIN (pas de mot de passe pour OAuth)
+                  showCreatePinModal();
                 } catch (e) {
                   callbackProcessed = true;
                   chrome.tabs.onUpdated.removeListener(tabUpdateListener);
@@ -1256,8 +1290,41 @@ async function openGoogleSignIn() {
               // Close the popup
               chrome.windows.remove(popupWindow.id);
 
-              // Process the token
-              handleVaultToken(result.token);
+              // Process the token OAuth - utiliser la même logique que handleCredentialResponse
+              // Pour OAuth, on ne doit pas demander de mot de passe
+              const vaultUrl = settings.vaultUrl || 'https://vault.exem.fr/';
+              
+              // Vérifier le token et récupérer l'entity_name
+              const testResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
+                method: 'GET',
+                headers: {
+                  'X-Vault-Token': result.token,
+                  'Content-Type': 'application/json'
+                }
+              });
+
+              if (!testResponse.ok) {
+                throw new Error('Token Vault invalide');
+              }
+
+              const entityName = await getEntityNameFromToken(vaultUrl, result.token);
+
+              // Créer le mount path s'il n'existe pas
+              let mountPath = settings.kvMount || entityName;
+              const mountResult = await ensureMountPath(vaultUrl, result.token, mountPath);
+              if (!mountResult.success) {
+                const errorMsg = mountResult.message || 'Impossible de créer le mount path';
+                throw new Error(`Erreur mount: ${errorMsg}`);
+              }
+
+              // Token valide et mount créé, stocker temporairement
+              // Pour OAuth, utiliser directement l'entityName comme Master Key (pas de mot de passe)
+              pendingToken = result.token;
+              pendingDisplayName = entityName;
+              pendingIsOAuth = true; // Authentification OAuth
+              hideSetupModal();
+              // Passer directement au modal PIN (pas de mot de passe pour OAuth)
+              showCreatePinModal();
             } catch (e) {
               callbackProcessed = true;
               chrome.tabs.onUpdated.removeListener(tabUpdateListener);
@@ -1320,6 +1387,7 @@ async function handleVaultToken(vaultToken) {
     // Token valid and mount created, store temporarily and ask for Master Password creation
     pendingToken = vaultToken;
     pendingDisplayName = entityName;
+    pendingIsOAuth = false; // Authentification manuelle
     hideSetupModal();
     showCreatePasswordModal();
   } catch (error) {
@@ -1388,11 +1456,14 @@ async function handleCredentialResponse(response) {
       return;
     }
 
-    // Token valid and mount created, store temporarily and ask for Master Password creation
+    // Token valid and mount created, store temporarily
+    // Pour OAuth, utiliser directement l'entityName comme Master Key (pas de mot de passe)
     pendingToken = vaultToken;
     pendingDisplayName = entityName;
+    pendingIsOAuth = true; // Authentification OAuth
     hideSetupModal();
-    showCreatePasswordModal();
+    // Passer directement au modal PIN (pas de mot de passe pour OAuth)
+    showCreatePinModal();
   } catch (error) {
     console.error('OIDC authentication error:', error);
     setupError.textContent = error.message || 'Erreur lors de l\'authentification OIDC';
@@ -1536,7 +1607,7 @@ async function authenticate(pin) {
   try {
     // Récupérer les données stockées
     const stored = await new Promise((resolve) => {
-      chrome.storage.local.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount', 'tokenExpireTime'], resolve);
+      chrome.storage.sync.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount', 'tokenExpireTime'], resolve);
     });
 
     if (!stored.encryptedToken || !stored.pinHash) {
@@ -1610,7 +1681,7 @@ async function authenticate(pin) {
     if (tokenMetadata && tokenMetadata.expireTime) {
       // Mettre à jour la date d'expiration dans le storage
       await new Promise((resolve) => {
-        chrome.storage.local.set({ tokenExpireTime: tokenMetadata.expireTime }, resolve);
+        chrome.storage.sync.set({ tokenExpireTime: tokenMetadata.expireTime }, resolve);
       });
     }
 
@@ -1623,7 +1694,7 @@ async function authenticate(pin) {
       }
       // Sauvegarder le kvMount dans le storage pour la prochaine fois
       await new Promise((resolve) => {
-        chrome.storage.local.set({ kvMount: mountPath }, resolve);
+        chrome.storage.sync.set({ kvMount: mountPath }, resolve);
       });
     }
     
@@ -2788,6 +2859,7 @@ setupTokenBtn.addEventListener('click', async () => {
     // Token valide et mount créé, stocker temporairement et demander la création du mot de passe Master Key
     pendingToken = token;
     pendingDisplayName = entityName;
+    pendingIsOAuth = false; // Authentification manuelle
     hideSetupModal();
     showCreatePasswordModal();
   } catch (error) {
@@ -2851,7 +2923,9 @@ createPinBtn.addEventListener('click', async () => {
     return;
   }
 
-  if (!pendingMasterPassword) {
+  // Pour OAuth, pas besoin de mot de passe (on utilise l'entityName)
+  // Pour l'authentification manuelle, le mot de passe est requis
+  if (!pendingIsOAuth && !pendingMasterPassword) {
     createPinError.textContent = 'Erreur: mot de passe Master Key manquant';
     createPinError.style.display = 'block';
     return;
@@ -2869,10 +2943,17 @@ createPinBtn.addEventListener('click', async () => {
     // Chiffrer le token avec le PIN
     const encryptedToken = await window.cryptoUtils.encrypt(pendingToken, pin);
 
-    // Initialiser le système de chiffrement avec le mot de passe Master Key
-    // Utiliser le kvMount (entity_name) comme userId pour générer un sel déterministe
+    // Initialiser le système de chiffrement
+    // Pour OAuth: utiliser l'entityName (userId) comme Master Key
+    // Pour manuel: utiliser le mot de passe comme Master Key
     const kvMount = pendingDisplayName || settings.kvMount;
-    await window.cryptoSystem.initializeCryptoSystem(pendingMasterPassword, pin, kvMount);
+    if (pendingIsOAuth) {
+      // OAuth: utiliser l'entityName directement comme Master Key
+      await window.cryptoSystem.initializeCryptoSystemWithUserId(kvMount, pin, kvMount);
+    } else {
+      // Manuel: utiliser le mot de passe
+      await window.cryptoSystem.initializeCryptoSystem(pendingMasterPassword, pin, kvMount);
+    }
     console.log('✅ Système de chiffrement initialisé avec succès');
     
     // Préparer les données à sauvegarder
@@ -2880,7 +2961,8 @@ createPinBtn.addEventListener('click', async () => {
       vaultUrl: settings.vaultUrl || 'https://vault.exem.fr/',
       kvMount: kvMount,
       encryptedToken: encryptedToken,
-      pinHash: pinHash
+      pinHash: pinHash,
+      isOAuth: pendingIsOAuth // Stocker le flag pour savoir comment récupérer la Master Key
     };
     
     // Ajouter les métadonnées du token si disponibles
@@ -2896,9 +2978,9 @@ createPinBtn.addEventListener('click', async () => {
       }
     }
     
-    // Sauvegarder dans chrome.storage.local
+    // Sauvegarder dans chrome.storage.sync
     await new Promise((resolve) => {
-      chrome.storage.local.set(dataToSave, resolve);
+      chrome.storage.sync.set(dataToSave, resolve);
     });
 
     hideCreatePinModal();
@@ -2906,6 +2988,7 @@ createPinBtn.addEventListener('click', async () => {
     pendingToken = null;
     pendingDisplayName = null;
     pendingMasterPassword = null;
+    pendingIsOAuth = false;
 
     // Maintenant demander l'authentification rapide pour utiliser l'extension
     setTimeout(() => {
@@ -3103,7 +3186,7 @@ async function loadCategoriesFromVault() {
 // Sauvegarder les catégories
 async function saveCategories() {
   await new Promise((resolve) => {
-    chrome.storage.local.set({ categories: categories }, resolve);
+    chrome.storage.sync.set({ categories: categories }, resolve);
   });
 }
 
@@ -3230,7 +3313,7 @@ async function initialize() {
 
   // Charger les paramètres
   const stored = await new Promise((resolve) => {
-    chrome.storage.local.get(['vaultUrl', 'kvMount', 'encryptedToken', 'pinHash'], resolve);
+    chrome.storage.sync.get(['vaultUrl', 'kvMount', 'encryptedToken', 'pinHash'], resolve);
   });
 
   settings.vaultUrl = stored.vaultUrl || 'https://vault.exem.fr/';

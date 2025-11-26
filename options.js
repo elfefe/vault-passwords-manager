@@ -111,7 +111,7 @@ if (togglePinConfirm) {
 }
 
 function loadSettings() {
-  chrome.storage.local.get(['vaultUrl', 'kvMount'], (res) => {
+  chrome.storage.sync.get(['vaultUrl', 'kvMount'], (res) => {
     vaultUrlInput.value = res.vaultUrl || 'https://vault.exem.fr/';
     kvMountInput.value = res.kvMount || '';
   });
@@ -304,7 +304,7 @@ async function openGoogleSignIn() {
               }
 
               // Check if PIN exists, if not show PIN modal
-              chrome.storage.local.get(['pinHash'], async (res) => {
+              chrome.storage.sync.get(['pinHash'], async (res) => {
                 if (res.pinHash) {
                   const currentPin = prompt('Entrez votre clé d\'authentification rapide actuelle (4 chiffres) :');
                   if (!currentPin || currentPin.length !== 4) {
@@ -386,7 +386,7 @@ async function handleCredentialResponse(response) {
     
     // Automatically trigger the save flow
     // Check if PIN exists, if not show PIN modal, otherwise save directly
-    chrome.storage.local.get(['pinHash'], async (res) => {
+    chrome.storage.sync.get(['pinHash'], async (res) => {
       if (res.pinHash) {
         // PIN exists, ask for it to update
         const currentPin = prompt('Entrez votre clé d\'authentification rapide actuelle (4 chiffres) :');
@@ -522,7 +522,7 @@ async function saveTokenWithPin(vaultToken, pin) {
     
     // Save to storage
     await new Promise((resolve) => {
-      chrome.storage.local.set(dataToSave, resolve);
+      chrome.storage.sync.set(dataToSave, resolve);
     });
     
     alert('Configuration mise à jour avec succès !');
@@ -725,9 +725,9 @@ pinSaveBtn.addEventListener('click', async () => {
       }
     }
     
-    // Sauvegarder dans chrome.storage.local
+    // Sauvegarder dans chrome.storage.sync
     await new Promise((resolve) => {
-      chrome.storage.local.set(dataToSave, resolve);
+      chrome.storage.sync.set(dataToSave, resolve);
     });
     
     hidePinModal();
@@ -917,7 +917,7 @@ saveBtn.addEventListener('click', async () => {
   }
   
   // Vérifier si un PIN existe déjà
-  chrome.storage.local.get(['pinHash'], async (res) => {
+  chrome.storage.sync.get(['pinHash'], async (res) => {
     if (res.pinHash) {
       // PIN existe déjà, demander de le confirmer pour mettre à jour
       const currentPin = prompt('Entrez votre clé d\'authentification rapide actuelle (4 chiffres) :');
@@ -933,7 +933,7 @@ saveBtn.addEventListener('click', async () => {
       }
       
       // Déchiffrer l'ancien token pour le mettre à jour
-      chrome.storage.local.get(['encryptedToken'], async (res2) => {
+      chrome.storage.sync.get(['encryptedToken'], async (res2) => {
         try {
           const oldToken = await window.cryptoUtils.decrypt(res2.encryptedToken, currentPin);
           
@@ -984,7 +984,7 @@ saveBtn.addEventListener('click', async () => {
           }
           
           await new Promise((resolve) => {
-            chrome.storage.local.set(dataToSave, resolve);
+            chrome.storage.sync.set(dataToSave, resolve);
           });
           
           alert('Configuration mise à jour avec succès !');
@@ -1002,7 +1002,7 @@ saveBtn.addEventListener('click', async () => {
 
 clearBtn.addEventListener('click', () => {
   if (confirm('Voulez-vous vraiment réinitialiser toute la configuration ? Cette action est irréversible.')) {
-    chrome.storage.local.clear(() => {
+    chrome.storage.sync.clear(() => {
       vaultUrlInput.value = 'https://vault.exem.fr/';
       vaultTokenInput.value = '';
       kvMountInput.value = '';
@@ -1200,7 +1200,7 @@ pinPromptOkBtn.addEventListener('click', async () => {
   // Vérifier le PIN
   try {
     const stored = await new Promise((resolve) => {
-      chrome.storage.local.get(['pinHash'], resolve);
+      chrome.storage.sync.get(['pinHash'], resolve);
     });
     
     if (!stored.pinHash) {
@@ -1428,7 +1428,7 @@ let optionsPin = null;
 async function authenticateForOptions(pin) {
   try {
     const stored = await new Promise((resolve) => {
-      chrome.storage.local.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount'], resolve);
+      chrome.storage.sync.get(['encryptedToken', 'pinHash', 'vaultUrl', 'kvMount'], resolve);
     });
 
     if (!stored.encryptedToken || !stored.pinHash) {
@@ -1663,6 +1663,10 @@ async function exportAllCategories() {
 // Fonction pour importer des catégories et leurs secrets
 async function importAllCategories(file) {
   try {
+    // Vérifier si le nom du fichier correspond au format d'export natif
+    const fileName = file.name;
+    const isNativeExport = /^vault-categories-export-\d+\.json$/.test(fileName);
+    
     // Lire le fichier
     const fileContent = await file.text();
     let importData;
@@ -1733,8 +1737,42 @@ async function importAllCategories(file) {
             const encryptedItems = [];
             for (const item of secretData) {
               if (item && item.key) {
+                let valueToEncrypt = item.value;
+                
+                // Si le fichier n'est pas un export natif, vérifier si la valeur est déjà chiffrée
+                if (!isNativeExport) {
+                  // Vérifier si la valeur est déjà chiffrée (objet avec iv, ciphertext, tag)
+                  const isAlreadyEncrypted = (
+                    valueToEncrypt &&
+                    typeof valueToEncrypt === 'object' &&
+                    valueToEncrypt.iv &&
+                    valueToEncrypt.ciphertext &&
+                    valueToEncrypt.tag
+                  ) || (
+                    typeof valueToEncrypt === 'string' &&
+                    (() => {
+                      try {
+                        const parsed = JSON.parse(valueToEncrypt);
+                        return parsed && parsed.iv && parsed.ciphertext && parsed.tag;
+                      } catch {
+                        return false;
+                      }
+                    })()
+                  );
+                  
+                  // Si déjà chiffré, ne pas re-chiffrer
+                  if (isAlreadyEncrypted) {
+                    encryptedItems.push({
+                      key: item.key,
+                      value: valueToEncrypt
+                    });
+                    continue;
+                  }
+                }
+                
+                // Sinon, chiffrer la valeur (fichier natif déchiffré ou fichier externe en clair)
                 const encryptedValue = await encryptSecretValue(
-                  item.value,
+                  valueToEncrypt,
                   category.name,
                   secretName,
                   item.key
@@ -1747,7 +1785,14 @@ async function importAllCategories(file) {
             }
             encryptedSecrets[secretName] = encryptedItems;
           } else {
-            encryptedSecrets[secretName] = secretData;
+            // Pour les valeurs non-array, vérifier aussi si elles sont déjà chiffrées
+            if (!isNativeExport && secretData && typeof secretData === 'object' && secretData.iv && secretData.ciphertext && secretData.tag) {
+              // Déjà chiffré, ne pas re-chiffrer
+              encryptedSecrets[secretName] = secretData;
+            } else {
+              // Sinon, chiffrer (ou garder tel quel si ce n'est pas une valeur simple)
+              encryptedSecrets[secretName] = secretData;
+            }
           }
         }
 
