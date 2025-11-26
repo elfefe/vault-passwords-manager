@@ -1,5 +1,6 @@
 // popup.js - interaction avec Vault KV v2
 const categorySelect = document.getElementById('categorySelect');
+const categoryList = document.getElementById('categoryList');
 const newCategoryBtn = document.getElementById('newCategoryBtn');
 const deleteCategoryBtn = document.getElementById('deleteCategoryBtn');
 const writeBtn = document.getElementById('writeBtn');
@@ -1791,15 +1792,8 @@ function displayCards(secrets) {
   cardsContainer.innerHTML = '';
   currentSecrets = secrets;
   
-  const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
-  let filteredSecrets = searchTerm 
-    ? secrets.filter(s => 
-        s.key.toLowerCase().includes(searchTerm) || 
-        s.value.toLowerCase().includes(searchTerm)
-      )
-    : secrets;
-  
   // Filtrer par type si un type est sélectionné
+  let filteredSecrets = secrets;
   if (selectedType) {
     filteredSecrets = filteredSecrets.filter(s => (s.type || 'Clés') === selectedType);
   }
@@ -1807,13 +1801,7 @@ function displayCards(secrets) {
   filteredSecrets.forEach((secret, index) => {
     const card = document.createElement('div');
     card.className = 'card';
-    
-    // Icône avec première lettre ou numéro
-    const icon = document.createElement('div');
-    icon.className = 'card-icon';
-    const iconText = secret.key.charAt(0).toUpperCase() || (index + 1).toString();
-    icon.textContent = iconText;
-    
+
     // Contenu de la carte
     const content = document.createElement('div');
     content.className = 'card-content';
@@ -1824,7 +1812,12 @@ function displayCards(secrets) {
     
     const subtitle = document.createElement('div');
     subtitle.className = 'card-subtitle';
-    subtitle.textContent = secret.type || 'Clés'; // Le sous-titre est le type (par défaut "Clés")
+    // Afficher la catégorie si disponible (pour les résultats de recherche globale)
+    if (secret.category && secret.category !== secret.path) {
+      subtitle.textContent = secret.category;
+    } else {
+      subtitle.textContent = secret.type || 'Clés'; // Le sous-titre est le type (par défaut "Clés")
+    }
     
     content.appendChild(title);
     content.appendChild(subtitle);
@@ -1875,7 +1868,6 @@ function displayCards(secrets) {
       }
     });
     
-    card.appendChild(icon);
     card.appendChild(content);
     card.appendChild(actions);
     
@@ -2043,14 +2035,25 @@ async function navigateToDetail(secret, index, isNew = false, withGeneratedPassw
     }
     
     // Charger le secret spécifique avec sa liste de clés-valeurs
-    // Le path est maintenant juste la catégorie
-    if (currentCategoryPath) {
-      await loadSecretDetail(currentCategoryPath);
-    } else if (secret.path) {
-      // Extraire la catégorie du path si nécessaire (pour compatibilité)
-      const pathParts = secret.path.split('/');
-      const categoryPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : secret.path;
-      await loadSecretDetail(categoryPath);
+    // Utiliser en priorité la catégorie du résultat (search) plutôt que la catégorie courante
+    // 1) secret.path (catégorie réelle dans Vault)
+    // 2) secret.category (fallback)
+    // 3) currentCategoryPath (si aucune info dans le secret)
+    let categoryPathToUse = secret.path || secret.category || currentCategoryPath;
+    
+    // Mettre à jour currentCategoryPath et currentSecretName pour que la navigation fonctionne correctement
+    if (categoryPathToUse) {
+      currentCategoryPath = categoryPathToUse;
+      currentSecretName = secret.key; // S'assurer que currentSecretName est défini
+      // Mettre à jour le select de catégorie si nécessaire
+      if (categorySelect && categorySelect.value !== categoryPathToUse) {
+        categorySelect.value = categoryPathToUse;
+      }
+    }
+    
+    if (categoryPathToUse && secret.key) {
+      // Appeler loadSecretDetail avec la catégorie, currentSecretName est déjà défini
+      await loadSecretDetail(categoryPathToUse);
     } else {
       clearSecretFields();
       addField(secret.key, secret.value);
@@ -2070,8 +2073,8 @@ async function loadSecretDetail(secretPath) {
   let categoryPath = secretPath;
   let secretName = null;
   
-  // Utiliser currentCategoryPath si disponible, sinon extraire du path
-  if (currentCategoryPath) {
+  // Utiliser currentCategoryPath et currentSecretName si disponibles
+  if (currentCategoryPath && currentSecretName) {
     categoryPath = currentCategoryPath;
     secretName = currentSecretName;
   } else {
@@ -2088,11 +2091,16 @@ async function loadSecretDetail(secretPath) {
   }
 
   if (!secretName) {
+    console.warn('loadSecretDetail: secretName non défini, categoryPath:', categoryPath, 'currentSecretName:', currentSecretName);
     clearSecretFields();
     return;
   }
 
+  // S'assurer que currentSecretName et currentCategoryPath sont à jour
   currentSecretName = secretName;
+  if (categoryPath) {
+    currentCategoryPath = categoryPath;
+  }
   // Mettre à jour le champ de saisie du nom
   if (detailTitleInput) {
     detailTitleInput.value = secretName;
@@ -2112,6 +2120,13 @@ async function loadSecretDetail(secretPath) {
     
     // Extraire le secret spécifique par son nom
     const secretData = categoryData[secretName];
+    
+    if (!secretData) {
+      console.warn(`Secret "${secretName}" non trouvé dans la catégorie "${categoryPath}". Secrets disponibles:`, Object.keys(categoryData));
+      clearSecretFields();
+      addField('', '');
+      return;
+    }
     
     if (secretData && Array.isArray(secretData)) {
       // Charger chaque élément de la liste dans le tableau
@@ -2390,12 +2405,172 @@ generateBtn.addEventListener('click', () => {
   showToast('Mot de passe généré', 'success');
 });
 
+// Fonction de recherche globale dans toutes les catégories et secrets
+async function performGlobalSearch(searchTerm) {
+  if (!searchTerm || searchTerm.trim() === '') {
+    // Si la recherche est vide, revenir à la catégorie actuelle
+    if (currentCategoryPath) {
+      await loadCardsFromVault(currentCategoryPath);
+    } else {
+      displayCards([]);
+    }
+    return;
+  }
+
+  const authenticated = await ensureAuthenticated();
+  if (!authenticated) {
+    displayCards([]);
+    return;
+  }
+
+  try {
+    // Charger toutes les catégories
+    const allCategories = await loadCategoriesFromFile();
+    if (allCategories.length === 0) {
+      displayCards([]);
+      return;
+    }
+
+    const searchLower = searchTerm.toLowerCase().trim();
+    const matchingSecrets = [];
+
+    // Parcourir toutes les catégories
+    for (const categoryPath of allCategories) {
+      try {
+        // Lire tous les secrets de cette catégorie
+        const res = await readSecret(categoryPath);
+        const categoryData = (res && res.data && res.data.data) || {};
+        const secretNames = Object.keys(categoryData).filter(key => key !== 'categories');
+
+        // Parcourir tous les secrets de cette catégorie
+        for (const secretName of secretNames) {
+          const secretData = categoryData[secretName];
+          let matches = false;
+          let displayValue = '';
+
+          // Vérifier si le nom de la catégorie correspond
+          if (categoryPath.toLowerCase().includes(searchLower)) {
+            matches = true;
+          }
+
+          // Vérifier si le nom du secret correspond
+          if (secretName.toLowerCase().includes(searchLower)) {
+            matches = true;
+          }
+
+          // Si c'est une liste de clés-valeurs, vérifier chaque clé et valeur
+          if (Array.isArray(secretData)) {
+            for (const item of secretData) {
+              if (item && item.key) {
+                // Vérifier si la clé correspond
+                if (item.key.toLowerCase().includes(searchLower)) {
+                  matches = true;
+                }
+
+                // Déchiffrer et vérifier la valeur si nécessaire
+                let decryptedValue = item.value;
+                if (item.value && typeof item.value === 'object' && item.value.iv && item.value.ciphertext && item.value.tag) {
+                  try {
+                    const context = `vault-secret-${categoryPath}-${secretName}-${item.key}`;
+                    decryptedValue = await window.cryptoSystem.decryptSecret(item.value, currentPin, context);
+                  } catch (e) {
+                    console.error('Erreur lors du déchiffrement pour la recherche:', e);
+                    // En cas d'erreur, continuer avec la valeur chiffrée pour la recherche
+                    decryptedValue = item.value;
+                  }
+                } else if (typeof item.value === 'string') {
+                  try {
+                    const parsedValue = JSON.parse(item.value);
+                    if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
+                      const context = `vault-secret-${categoryPath}-${secretName}-${item.key}`;
+                      decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
+                    }
+                  } catch (e) {
+                    // Ce n'est pas du JSON chiffré, utiliser la valeur brute
+                  }
+                }
+
+                // Vérifier si la valeur correspond (recherche dans toutes les valeurs)
+                if (decryptedValue) {
+                  // Convertir en string pour la recherche si ce n'est pas déjà une string
+                  const valueStr = typeof decryptedValue === 'string' 
+                    ? decryptedValue 
+                    : String(decryptedValue);
+                  
+                  if (valueStr.toLowerCase().includes(searchLower)) {
+                    matches = true;
+                  }
+                }
+
+                // Garder la première valeur déchiffrée pour l'affichage
+                if (!displayValue && decryptedValue && typeof decryptedValue === 'string') {
+                  displayValue = decryptedValue;
+                }
+              }
+            }
+          } else if (secretData && typeof secretData === 'object') {
+            // Si ce n'est pas un tableau mais un objet, chercher dans les valeurs de l'objet
+            for (const [key, value] of Object.entries(secretData)) {
+              if (key.toLowerCase().includes(searchLower)) {
+                matches = true;
+              }
+              
+              // Vérifier la valeur
+              if (value) {
+                const valueStr = typeof value === 'string' ? value : String(value);
+                if (valueStr.toLowerCase().includes(searchLower)) {
+                  matches = true;
+                }
+              }
+            }
+          }
+
+          // Si correspond, ajouter à la liste des résultats
+          if (matches) {
+            matchingSecrets.push({
+              key: secretName,
+              value: displayValue,
+              displayKey: secretName,
+              type: 'Clés',
+              path: categoryPath,
+              category: categoryPath // Ajouter la catégorie pour l'affichage
+            });
+          }
+        }
+      } catch (e) {
+        // Ignorer les erreurs pour cette catégorie et continuer
+        console.warn(`Erreur lors de la recherche dans la catégorie ${categoryPath}:`, e);
+      }
+    }
+
+    // Afficher les résultats
+    displayCards(matchingSecrets);
+  } catch (e) {
+    console.error('Erreur lors de la recherche globale:', e);
+    displayCards([]);
+  }
+}
+
 // Event listeners pour les nouveaux éléments
 if (searchInput) {
+  let searchTimeout;
   searchInput.addEventListener('input', () => {
-    if (cardsContainer && currentSecrets.length > 0) {
-      displayCards(currentSecrets);
-    }
+    // Debounce la recherche pour éviter trop d'appels
+    clearTimeout(searchTimeout);
+    const searchTerm = searchInput.value;
+    
+    searchTimeout = setTimeout(async () => {
+      if (searchTerm && searchTerm.trim() !== '') {
+        await performGlobalSearch(searchTerm);
+      } else {
+        // Si la recherche est vide, revenir à la catégorie actuelle
+        if (currentCategoryPath) {
+          await loadCardsFromVault(currentCategoryPath);
+        } else {
+          displayCards([]);
+        }
+      }
+    }, 300); // Attendre 300ms après la dernière frappe
   });
 }
 
@@ -3190,35 +3365,76 @@ async function saveCategories() {
   });
 }
 
-// Mettre à jour le select des catégories
+// Mettre à jour le select des catégories et la liste visuelle dans la sidebar
 function updateCategorySelect() {
-  const previousValue = categorySelect.value;
-  categorySelect.innerHTML = '';
+  const previousValue = categorySelect ? categorySelect.value : '';
 
-  if (categories.length === 0) {
-    const option = document.createElement('option');
-    option.value = '';
-    option.textContent = 'Aucune catégorie';
-    categorySelect.appendChild(option);
-    return;
+  // Mettre à jour le select caché (pour compatibilité)
+  if (categorySelect) {
+    categorySelect.innerHTML = '';
+
+    if (categories.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Aucune catégorie';
+      categorySelect.appendChild(option);
+    } else {
+      categories.forEach(category => {
+        const option = document.createElement('option');
+        option.value = category;
+        option.textContent = category;
+        categorySelect.appendChild(option);
+      });
+
+      // Sélectionner la première catégorie par défaut ou restaurer la sélection précédente
+      if (previousValue && categories.includes(previousValue)) {
+        categorySelect.value = previousValue;
+      } else if (categories.length > 0) {
+        categorySelect.value = categories[0];
+      }
+    }
   }
 
-  categories.forEach(category => {
-    const option = document.createElement('option');
-    option.value = category;
-    option.textContent = category;
-    categorySelect.appendChild(option);
-  });
+  const selectedCategory = categorySelect ? (categorySelect.value || '') : '';
 
-  // Sélectionner la première catégorie par défaut ou restaurer la sélection précédente
-  if (categories.length > 0) {
-    if (previousValue && categories.includes(previousValue)) {
-      categorySelect.value = previousValue;
+  // Mettre à jour la liste visible des catégories dans la sidebar
+  if (categoryList) {
+    categoryList.innerHTML = '';
+
+    if (categories.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'category-empty';
+      emptyEl.textContent = 'Aucune catégorie';
+      categoryList.appendChild(emptyEl);
     } else {
-      categorySelect.value = categories[0];
+      categories.forEach(category => {
+        const item = document.createElement('button');
+        item.className = 'category-item';
+        if (category === selectedCategory) {
+          item.classList.add('active');
+        }
+        item.textContent = category;
+        item.title = category;
+        item.addEventListener('click', () => {
+          if (categorySelect) {
+            categorySelect.value = category;
+            // Déclencher la logique existante de changement de catégorie
+            const event = new Event('change', { bubbles: true });
+            categorySelect.dispatchEvent(event);
+          }
+          // Mettre à jour l'état visuel actif
+          Array.from(categoryList.querySelectorAll('.category-item')).forEach(el => {
+            el.classList.toggle('active', el === item);
+          });
+        });
+        categoryList.appendChild(item);
+      });
     }
-    // Charger automatiquement les secrets de la catégorie sélectionnée
-    loadCategorySecrets(categorySelect.value);
+  }
+
+  // Charger automatiquement les secrets de la catégorie sélectionnée après la mise à jour
+  if (selectedCategory) {
+    loadCategorySecrets(selectedCategory);
   }
 }
 
