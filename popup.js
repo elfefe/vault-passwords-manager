@@ -18,6 +18,7 @@ const searchInput = document.getElementById('searchInput');
 const createBtn = document.getElementById('createBtn');
 const typeBtn = document.getElementById('typeBtn');
 const settingsBtn = document.getElementById('settingsBtn');
+const logoutBtn = document.getElementById('logoutBtn');
 const cardsView = document.getElementById('cardsView');
 const detailView = document.getElementById('detailView');
 const backBtn = document.getElementById('backBtn');
@@ -25,6 +26,8 @@ const detailTitle = document.getElementById('detailTitle');
 const detailTitleInput = document.getElementById('detailTitleInput');
 let currentCategoryPath = null;
 let currentSecretName = null; // Nom du secret actuellement édité
+let draggedSecretRow = null; // Ligne actuellement déplacée dans le tableau de détails
+let secretTableDnDInitialized = false; // Pour initialiser le drag & drop une seule fois
 const authModal = document.getElementById('authModal');
 const authPinInput = document.getElementById('authPinInput');
 const authError = document.getElementById('authError');
@@ -1822,50 +1825,38 @@ function displayCards(secrets) {
     content.appendChild(title);
     content.appendChild(subtitle);
     
-    // Actions
+    // Actions (copier le mot de passe si présent)
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     
-    // Bouton copier
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'card-action-btn';
-    copyBtn.title = 'Copier';
-    copyBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
-    copyBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(secret.value);
-        showToast('Valeur copiée', 'success');
-      } catch (err) {
-        const textarea = document.createElement('textarea');
-        textarea.value = secret.value;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        showToast('Valeur copiée', 'success');
-      }
-    });
-    
-    // Bouton ouvrir - naviguer vers la vue de détail
-    const openBtn = document.createElement('button');
-    openBtn.className = 'card-action-btn';
-    openBtn.title = 'Ouvrir';
-    openBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
-    openBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      navigateToDetail(secret, index);
-    });
-    
-    actions.appendChild(copyBtn);
-    actions.appendChild(openBtn);
+    if (secret.hasPasswordLabel && secret.value) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'card-action-btn';
+      copyBtn.title = 'Copier le mot de passe';
+      copyBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      copyBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(secret.value);
+          showToast('Mot de passe copié', 'success');
+        } catch (err) {
+          const textarea = document.createElement('textarea');
+          textarea.value = secret.value;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          showToast('Mot de passe copié', 'success');
+        }
+      });
+      actions.appendChild(copyBtn);
+    }
     
     // Clic sur la carte pour ouvrir le détail
     card.addEventListener('click', (e) => {
-      // Ne pas ouvrir si on clique sur les boutons d'action
-      if (!e.target.closest('.card-action-btn')) {
-        navigateToDetail(secret, index);
-      }
+      // Ne pas ouvrir si on clique sur le bouton copier
+      if (e.target.closest('.card-action-btn')) return;
+      navigateToDetail(secret, index);
     });
     
     card.appendChild(content);
@@ -1890,6 +1881,31 @@ function updateItemsCount(count) {
   if (!itemsCount) return;
   const total = count !== undefined ? count : (currentSecrets ? currentSecrets.length : 0);
   itemsCount.textContent = `${total} élément${total > 1 ? 's' : ''} affiché${total > 1 ? 's' : ''}`;
+}
+
+// Fonction utilitaire pour déchiffrer une valeur de champ de secret
+async function decryptFieldValue(rawValue, context) {
+  let decryptedValue = rawValue;
+
+  if (rawValue && typeof rawValue === 'object' && rawValue.iv && rawValue.ciphertext && rawValue.tag) {
+    // Objet chiffré
+    decryptedValue = await window.cryptoSystem.decryptSecret(rawValue, currentPin, context);
+  } else if (typeof rawValue === 'string') {
+    // Vérifier si c'est une chaîne JSON chiffrée
+    try {
+      const parsedValue = JSON.parse(rawValue);
+      if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
+        decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
+      } else {
+        decryptedValue = rawValue;
+      }
+    } catch (e) {
+      // Ce n'est pas du JSON chiffré, utiliser la valeur brute
+      decryptedValue = rawValue;
+    }
+  }
+
+  return decryptedValue;
 }
 
 // Fonction pour charger les cartes directement depuis Vault
@@ -1934,36 +1950,22 @@ async function loadCardsFromVault(categoryPath) {
       // secretData devrait être une liste de clés-valeurs
       let mainValue = '';
       let displayKey = secretName;
+      let hasPasswordLabel = false;
       
       if (Array.isArray(secretData) && secretData.length > 0) {
-        // Prendre la première valeur de la liste pour l'affichage
-        const firstItem = secretData[0];
-        if (firstItem && firstItem.value) {
-          // Déchiffrer la valeur si nécessaire
-          let decryptedValue = firstItem.value;
-          
-          // Vérifier si c'est un objet chiffré
-          if (typeof firstItem.value === 'object' && firstItem.value.iv && firstItem.value.ciphertext && firstItem.value.tag) {
-            const context = `vault-secret-${categoryPath}-${secretName}-${firstItem.key}`;
-            decryptedValue = await window.cryptoSystem.decryptSecret(firstItem.value, currentPin, context);
-          } else if (typeof firstItem.value === 'string') {
-            // Vérifier si c'est une chaîne JSON chiffrée
-            try {
-              const parsedValue = JSON.parse(firstItem.value);
-              if (parsedValue && parsedValue.iv && parsedValue.ciphertext && parsedValue.tag) {
-                const context = `vault-secret-${categoryPath}-${secretName}-${firstItem.key}`;
-                decryptedValue = await window.cryptoSystem.decryptSecret(parsedValue, currentPin, context);
-              } else {
-                decryptedValue = firstItem.value;
-              }
-            } catch (e) {
-              // Utiliser la valeur brute
-              decryptedValue = firstItem.value;
-            }
-          }
-          
+        // Chercher un champ "Mot de passe" en priorité
+        const passwordItem = secretData.find(item => (item && item.key && item.key.toLowerCase() === 'mot de passe'));
+        const itemForDisplay = passwordItem || secretData[0];
+
+        if (passwordItem) {
+          hasPasswordLabel = true;
+        }
+
+        if (itemForDisplay && itemForDisplay.value) {
+          const context = `vault-secret-${categoryPath}-${secretName}-${itemForDisplay.key}`;
+          const decryptedValue = await decryptFieldValue(itemForDisplay.value, context);
           mainValue = decryptedValue;
-          displayKey = firstItem.key || secretName;
+          displayKey = itemForDisplay.key || secretName;
         }
       }
       
@@ -1971,6 +1973,7 @@ async function loadCardsFromVault(categoryPath) {
         key: secretName,
         value: mainValue,
         displayKey: displayKey,
+        hasPasswordLabel: hasPasswordLabel,
         type: 'Clés', // Type par défaut (pour le moment, seul type existant)
         path: categoryPath // Le path est maintenant juste la catégorie
       });
@@ -1983,19 +1986,41 @@ async function loadCardsFromVault(categoryPath) {
   }
 }
 
-// Fonction pour convertir les champs du tableau en format cartes (utilisée uniquement pour la synchronisation temporaire)
-function convertTableToCards() {
-  const rows = Array.from(secretTableBody.querySelectorAll('tr'));
-  const secrets = rows.map(row => {
-    const keyInput = row.querySelector('td:first-child input');
-    const valInput = row.querySelector('td:nth-child(2) input');
-    return {
-      key: keyInput ? keyInput.value.trim() : '',
-      value: valInput ? valInput.value : ''
-    };
-  }).filter(s => s.key || s.value);
-  
-  displayCards(secrets);
+// Fonction utilitaire pour activer le drag & drop des lignes dans le tableau de détails
+function initializeSecretTableDragAndDrop() {
+  if (secretTableDnDInitialized || !secretTableBody) return;
+  secretTableDnDInitialized = true;
+
+  secretTableBody.addEventListener('dragover', (e) => {
+    if (!draggedSecretRow) return;
+    e.preventDefault();
+    const afterElement = getDragAfterRow(secretTableBody, e.clientY);
+    if (!afterElement) {
+      secretTableBody.appendChild(draggedSecretRow);
+    } else if (afterElement !== draggedSecretRow) {
+      secretTableBody.insertBefore(draggedSecretRow, afterElement);
+    }
+  });
+
+  secretTableBody.addEventListener('drop', (e) => {
+    e.preventDefault();
+    draggedSecretRow = null;
+  });
+}
+
+function getDragAfterRow(container, y) {
+  const rows = [...container.querySelectorAll('tr.draggable-row:not(.dragging)')];
+  let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+
+  rows.forEach(row => {
+    const box = row.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      closest = { offset, element: row };
+    }
+  });
+
+  return closest.element;
 }
 
 // Fonction pour naviguer vers la vue de détail
@@ -2158,7 +2183,12 @@ async function loadSecretDetail(secretPath) {
             decryptedValue = item.value;
           }
           
-          const isPwd = item.key.toLowerCase().includes('password') || item.key.toLowerCase().includes('pass') || item.key.toLowerCase().includes('pwd');
+          const keyLower = item.key.toLowerCase().trim();
+          const isPwd =
+            keyLower === 'mot de passe' ||
+            keyLower.includes('password') ||
+            keyLower.includes('pass') ||
+            keyLower.includes('pwd');
           addField(item.key, decryptedValue, isPwd);
         }
       }
@@ -2198,6 +2228,8 @@ if (backBtn) {
 
 function addField(key = '', value = '', isPassword = false) {
   const row = document.createElement('tr');
+  row.classList.add('draggable-row');
+  row.draggable = true;
 
   // Cellule clé
   const keyCell = document.createElement('td');
@@ -2205,6 +2237,9 @@ function addField(key = '', value = '', isPassword = false) {
   keyInput.type = 'text';
   keyInput.placeholder = 'clé';
   keyInput.value = key;
+  if (keyInput.value.trim().toLowerCase() === 'mot de passe') {
+    keyInput.classList.add('password-label');
+  }
   keyCell.appendChild(keyInput);
 
   // Cellule valeur avec boutons
@@ -2214,7 +2249,14 @@ function addField(key = '', value = '', isPassword = false) {
   valInput.type = isPassword ? 'password' : 'text';
   valInput.placeholder = 'valeur';
   valInput.value = value;
-  if (isPassword || key.toLowerCase().includes('password') || key.toLowerCase().includes('pass') || key.toLowerCase().includes('pwd')) {
+  const keyLower = (key || '').toLowerCase().trim();
+  if (
+    isPassword ||
+    keyLower === 'mot de passe' ||
+    keyLower.includes('password') ||
+    keyLower.includes('pass') ||
+    keyLower.includes('pwd')
+  ) {
     valInput.type = 'password';
     valInput.classList.add('password-field');
   }
@@ -2295,6 +2337,18 @@ function addField(key = '', value = '', isPassword = false) {
     row.style.transform = 'translateY(0)';
   }, 10);
 
+  // Drag & drop pour réordonner les lignes
+  initializeSecretTableDragAndDrop();
+  row.addEventListener('dragstart', (e) => {
+    draggedSecretRow = row;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  row.addEventListener('dragend', () => {
+    row.classList.remove('dragging');
+    draggedSecretRow = null;
+  });
+
   // Auto-détection du type password lors de la saisie de la clé
   keyInput.addEventListener('input', () => {
     const keyLower = keyInput.value.toLowerCase();
@@ -2303,6 +2357,12 @@ function addField(key = '', value = '', isPassword = false) {
       valInput.classList.add('password-field');
       toggleBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
       toggleBtn.title = 'Afficher';
+    }
+    // Mettre en gras le label exact "Mot de passe"
+    if (keyInput.value.trim().toLowerCase() === 'mot de passe') {
+      keyInput.classList.add('password-label');
+    } else {
+      keyInput.classList.remove('password-label');
     }
     // Ne pas mettre à jour les cartes depuis le tableau - elles doivent toujours refléter Vault
     // Les cartes seront rechargées depuis Vault après sauvegarde
@@ -2447,6 +2507,7 @@ async function performGlobalSearch(searchTerm) {
           const secretData = categoryData[secretName];
           let matches = false;
           let displayValue = '';
+          let hasPasswordLabel = false;
 
           // Vérifier si le nom de la catégorie correspond
           if (categoryPath.toLowerCase().includes(searchLower)) {
@@ -2462,6 +2523,9 @@ async function performGlobalSearch(searchTerm) {
           if (Array.isArray(secretData)) {
             for (const item of secretData) {
               if (item && item.key) {
+                if (item.key.toLowerCase() === 'mot de passe') {
+                  hasPasswordLabel = true;
+                }
                 // Vérifier si la clé correspond
                 if (item.key.toLowerCase().includes(searchLower)) {
                   matches = true;
@@ -2531,6 +2595,7 @@ async function performGlobalSearch(searchTerm) {
               key: secretName,
               value: displayValue,
               displayKey: secretName,
+              hasPasswordLabel: hasPasswordLabel,
               type: 'Clés',
               path: categoryPath,
               category: categoryPath // Ajouter la catégorie pour l'affichage
@@ -2684,6 +2749,49 @@ if (settingsBtn) {
     } else {
       chrome.runtime.openOptionsPage();
     }
+  });
+}
+
+// Fonction de déconnexion
+async function logout() {
+  // Demander confirmation
+  if (!confirm('Êtes-vous sûr de vouloir vous déconnecter ? Toutes vos données d\'authentification seront supprimées.')) {
+    return;
+  }
+
+  try {
+    // Supprimer toutes les données d'authentification
+    await new Promise((resolve) => {
+      chrome.storage.sync.remove([
+        'encryptedToken',
+        'pinHash',
+        'vaultUrl',
+        'kvMount',
+        'tokenExpireTime',
+        'tokenTtl',
+        'tokenCreationTime',
+        'isOAuth',
+        'masterKeyHash'
+      ], resolve);
+    });
+
+    // Réinitialiser les variables en mémoire
+    isAuthenticated = false;
+    currentDecryptedToken = null;
+    currentPin = null;
+    settings = { vaultUrl: '', vaultToken: '', kvMount: '' };
+
+    // Fermer uniquement le popup de l'extension (pas toute la fenêtre Chrome)
+    window.close();
+  } catch (error) {
+    console.error('Erreur lors de la déconnexion:', error);
+    showToast('Erreur lors de la déconnexion', 'error');
+  }
+}
+
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    logout();
   });
 }
 
@@ -2907,21 +3015,18 @@ writeBtn.addEventListener('click', async () => {
     // Recharger les catégories et s'assurer que la catégorie est toujours sélectionnée
     await loadCategoriesFromVault();
 
-    // S'assurer que la catégorie est toujours sélectionnée après rechargement et recharger les secrets
+    // S'assurer que la catégorie est toujours sélectionnée après rechargement
+    // et recharger les cartes en arrière-plan (sans quitter la vue de détail)
     setTimeout(async () => {
       if (categories.includes(categoryPath)) {
         categorySelect.value = categoryPath;
-        // Recharger les cartes depuis Vault pour s'assurer qu'elles sont synchronisées
-        if (cardsView && cardsView.style.display !== 'none') {
+        if (cardsView && cardsContainer) {
           await loadCardsFromVault(categoryPath);
         }
       }
     }, 100);
 
     showToast('Secret sauvegardé avec succès (chiffré)', 'success');
-    
-    // Revenir à la vue des cartes après sauvegarde
-    navigateToCards();
   } catch (e) {
     showToast('Erreur: ' + (e.response?.errors?.[0] || e.message), 'error');
   }
