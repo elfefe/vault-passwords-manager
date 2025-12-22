@@ -9,6 +9,7 @@
 * **Sécurité Cryptographique :** Utilisation des algorithmes **ChaCha20-Poly1305** pour le chiffrement et **BLAKE3** pour la dérivation de clés.
 * **Gestion KV v2 :** Lister, lire, créer, mettre à jour et supprimer des secrets.
 * **Authentification Flexible :** Supporte l'authentification via Token manuel ou Google OIDC.
+* **Renouvellement Automatique des Tokens :** Les tokens Vault renouvelables sont automatiquement prolongés jusqu'à leur durée maximale (Max Lease TTL) lors de chaque connexion, évitant les ré-authentifications fréquentes.
 * **Interface Moderne :** Une UI vibrante avec des animations fluides, inspirée de Magic Patterns.
 * **Synchronisation et Backup :** Synchronisation automatique de la Master Key via Chrome ou backup manuel via fichier.
 
@@ -30,7 +31,7 @@ Lors de la première ouverture, vous devez connecter l'extension à votre instan
 2.  **Sécurisation (Création du PIN) :**
     * Définissez un code PIN à 4 chiffres.
     * Ce PIN servira à chiffrer votre **Master Key** et votre Token Vault localement.
-    * Le système génère alors automatiquement une Master Key cryptographiquement sécurisée (256 bits).
+    * Le système dérive alors automatiquement une Master Key cryptographiquement sécurisée (256 bits) depuis votre mot de passe utilisateur (authentification manuelle) ou depuis votre identifiant utilisateur (authentification OAuth) en utilisant PBKDF2.
 
 ---
 
@@ -40,13 +41,17 @@ Le cœur de l'extension repose sur une architecture de chiffrement en couches po
 
 
 ### 3.1. La Master Key
-* **Génération :** Clé de 256 bits (32 bytes) générée aléatoirement (`crypto.getRandomValues`) lors de la configuration.
-* **Stockage :** Elle est stockée dans `chrome.storage.local` (ou sync), chiffrée par votre PIN via AES-GCM. Elle n'est jamais stockée en clair.
+* **Génération :** Clé de 256 bits (32 bytes) **dérivée depuis un mot de passe utilisateur** (minimum 12 caractères) ou depuis l'identifiant utilisateur (userId/entity_name) en utilisant **PBKDF2** avec 100 000 itérations et SHA-256. La génération aléatoire (`crypto.getRandomValues`) est obsolète et n'est plus utilisée.
+* **Sel déterministe :** Un sel est généré de manière déterministe à partir du `kvMount` (entity_name) de l'utilisateur, garantissant que le même mot de passe + le même `kvMount` produisent toujours la même Master Key. Cela permet la récupération des données après réinstallation de l'extension.
+* **Modes d'authentification :**
+  * **Authentification OAuth (Google) :** La Master Key est dérivée directement depuis le `userId` (entity_name).
+  * **Authentification manuelle (Token) :** La Master Key est dérivée depuis un mot de passe utilisateur (minimum 12 caractères).
+* **Stockage :** Elle est stockée dans `chrome.storage.local` (ou sync), chiffrée par votre PIN via AES-GCM. Le sel est également stocké (pour référence, mais peut être régénéré de manière déterministe). Elle n'est jamais stockée en clair.
 
-### 3.2. Système de Dérivation (BLAKE3)
+### 3.2. Système de Dérivation (BLAKE3/HKDF)
 Pour éviter la corrélation entre les secrets, une clé unique est dérivée pour chaque secret individuel :
-* **Contexte :** `vault-secret-{catégorie}-{nom}`.
-* **Algorithme :** BLAKE3 (ou HKDF-SHA256 en fallback) est utilisé pour dériver une sous-clé à partir de la Master Key et du contexte unique du secret.
+* **Contexte :** `vault-secret-{catégorie}-{nom-du-secret}-{clé-du-champ}` (ex: `vault-secret-passwords-api_key-password`).
+* **Algorithme :** BLAKE3 est utilisé pour dériver une sous-clé à partir de la Master Key et du contexte unique du secret. L'implémentation utilise **HKDF-SHA256** comme fallback compatible navigateur pour garantir la compatibilité avec l'API Web Crypto standard.
 
 ### 3.3. Chiffrement Authentifié (ChaCha20-Poly1305)
 * Chaque valeur est chiffrée avec **ChaCha20-Poly1305**.
@@ -69,6 +74,15 @@ L'interface de saisie du PIN a été renforcée pour protéger contre le "should
 * **Sauvegarder :** Tout nouveau secret ou modification est automatiquement chiffré avant l'envoi.
 * **Générateur :** Un bouton permet de générer des mots de passe forts de 16 caractères.
 
+### Renouvellement Automatique des Tokens
+L'extension gère automatiquement le renouvellement des tokens Vault pour éviter les ré-authentifications fréquentes :
+
+* **Fonctionnement :** Lors de chaque connexion avec le PIN, l'extension vérifie si le token est renouvelable et proche de l'expiration (moins de 24 heures restantes ou TTL initial de 1 heure).
+* **Renouvellement :** Si les conditions sont remplies, le token est automatiquement renouvelé jusqu'à sa durée maximale (Max Lease TTL, généralement 99 jours pour OIDC).
+* **Transparence :** Le processus est automatique et transparent. Vous verrez une notification toast indiquant le renouvellement et le nouveau TTL.
+* **Logs :** Les détails du renouvellement sont disponibles dans la console du navigateur (F12) pour le débogage.
+* **Avantage :** Avec un Max Lease TTL de 99 jours, vous n'aurez besoin de vous ré-authentifier qu'une fois tous les 99 jours au lieu de toutes les heures.
+
 ### Interface Utilisateur (Design)
 L'interface a été modernisée (v1.1.2) pour offrir une meilleure expérience :
 * **Visuel :** Palette de couleurs vibrante (Violet `#290873`, Rose `#F72585`) et gradients.
@@ -90,7 +104,7 @@ Cette méthode permet d'avoir vos secrets sur tous vos appareils automatiquement
     1.  Allez dans **Options** → **Synchronisation Chrome**.
     2.  Cochez **"Activer la synchronisation Chrome"**.
     3.  Entrez votre PIN.
-* **Récupération :** Sur un nouvel ordinateur, installez l'extension et connectez-vous au même compte Google. La Master Key sera détectée automatiquement.
+* **Récupération :** Sur un nouvel ordinateur, installez l'extension et connectez-vous au même compte Google. La Master Key sera détectée automatiquement depuis `chrome.storage.sync`. **Note :** Grâce au système de dérivation déterministe (sel basé sur le `kvMount`), même si la synchronisation échoue, vous pouvez récupérer vos données en utilisant le même mot de passe et le même `kvMount` lors de la réinitialisation.
 
 ### 5.2. Backup Manuel (Export Fichier)
 Méthode pour le stockage hors ligne ("Cold Storage").
@@ -137,6 +151,10 @@ Cette section regroupe les solutions aux erreurs courantes rencontrées lors de 
     * **Solution :** Réinitialisez l'extension et créez un nouveau PIN.
 * **Erreur "Token invalide" :**
     * Votre token Vault a expiré ou a été révoqué. Reconnectez-vous via Google ou entrez un nouveau token dans les Options.
+* **Ré-authentification fréquente (toutes les heures) :**
+    * Si votre méthode d'authentification OIDC a un Default Lease TTL de 1 heure mais un Max Lease TTL de 99 jours, l'extension renouvelle automatiquement le token lors de chaque connexion pour atteindre le Max TTL.
+    * Le renouvellement se fait automatiquement après l'authentification avec le PIN si le token est renouvelable et proche de l'expiration (moins de 24 heures restantes ou TTL initial de 1 heure).
+    * Vérifiez dans la console (F12) les logs de renouvellement pour confirmer que le processus fonctionne correctement.
 
 ### 7.2. Problèmes de Chiffrement/Déchiffrement
 
@@ -155,8 +173,9 @@ Cette section regroupe les solutions aux erreurs courantes rencontrées lors de 
 * **"Master Key introuvable sur le nouvel appareil" :**
     * Vérifiez que vous êtes connecté au **même compte Google** sur les deux appareils.
     * Patientez quelques minutes, la propagation via Google peut prendre du temps (1-2 minutes).
+    * **Alternative :** Grâce au système de dérivation déterministe, si la synchronisation échoue, vous pouvez récupérer vos données en réinitialisant l'extension et en utilisant le même mot de passe (ou userId pour OAuth) et le même `kvMount` que sur l'appareil d'origine.
 * **"Conflit de Master Key" :**
-    * Si deux appareils ont généré des clés différentes, choisissez l'appareil qui possède la clé valide (celle qui déchiffre vos secrets actuels), forcez une synchronisation (désactiver/réactiver), puis réinitialisez l'autre appareil pour qu'il récupère la bonne clé du cloud.
+    * Avec le système de dérivation déterministe, si vous utilisez le même mot de passe (ou userId pour OAuth) et le même `kvMount` sur les deux appareils, la Master Key sera identique. Si un conflit survient malgré tout, choisissez l'appareil qui possède la clé valide (celle qui déchiffre vos secrets actuels), forcez une synchronisation (désactiver/réactiver), puis réinitialisez l'autre appareil pour qu'il récupère la bonne clé du cloud.
 
 ---
 

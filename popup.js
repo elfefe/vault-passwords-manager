@@ -40,6 +40,9 @@ const createPinInput = document.getElementById('createPinInput');
 const createPinConfirm = document.getElementById('createPinConfirm');
 const createPinBtn = document.getElementById('createPinBtn');
 const createPinError = document.getElementById('createPinError');
+const pinChoiceModal = document.getElementById('pinChoiceModal');
+const reusePinBtn = document.getElementById('reusePinBtn');
+const createNewPinBtn = document.getElementById('createNewPinBtn');
 const createPasswordModal = document.getElementById('createPasswordModal');
 const createPasswordInput = document.getElementById('createPasswordInput');
 const createPasswordConfirm = document.getElementById('createPasswordConfirm');
@@ -56,6 +59,10 @@ let pendingToken = null; // Token en attente de configuration
 let pendingDisplayName = null; // Display name en attente
 let pendingMasterPassword = null; // Mot de passe Master Key en attente
 let pendingIsOAuth = false; // Indique si l'authentification est OAuth (true) ou manuelle (false)
+let pendingTokenMetadata = null; // Métadonnées du token en attente
+let regenerateTokenResolve = null; // Promise resolve pour la régénération du token
+let isRegeneratingToken = false; // Indique si on est en train de régénérer le token
+let regeneratedToken = null; // Token régénéré en attente d'authentification
 let categories = []; // Liste des catégories
 const GOOGLE_CLIENT_ID = "482552972428-tn0hjn31huufi49cslf8982nmacf5sg9.apps.googleusercontent.com";
 
@@ -166,23 +173,61 @@ async function getTokenMetadata(vaultUrl, token) {
     const tokenData = await tokenResponse.json();
     const data = tokenData.data || {};
     
+    console.log('📋 Réponse brute de Vault lookup-self:', JSON.stringify(data, null, 2));
+
     // Extraire les informations de validité
-    const ttl = data.ttl || 0; // TTL en secondes
+    const ttl = data.ttl || 0; // TTL RESTANT en secondes (temps restant avant expiration)
     const creationTime = data.creation_time || 0; // Timestamp Unix
-    const expireTime = data.expire_time || null; // Timestamp Unix ou null si pas d'expiration
+    let expireTime = data.expire_time || null; // Peut être ISO 8601 ou timestamp Unix
+    
+    // Convertir expire_time en timestamp Unix si c'est une chaîne ISO 8601
+    if (expireTime) {
+      if (typeof expireTime === 'string') {
+        // C'est probablement une chaîne ISO 8601
+        const dateObj = new Date(expireTime);
+        if (!isNaN(dateObj.getTime())) {
+          expireTime = Math.floor(dateObj.getTime() / 1000); // Convertir en timestamp Unix
+        } else {
+          // Essayer de parser comme nombre
+          expireTime = parseInt(expireTime, 10);
+          if (isNaN(expireTime)) {
+            expireTime = null;
+          }
+        }
+      } else if (typeof expireTime === 'number') {
+        // C'est déjà un timestamp Unix
+        expireTime = Math.floor(expireTime);
+      }
+    }
     
     // Calculer la date d'expiration si elle n'est pas fournie mais que le TTL existe
     let calculatedExpireTime = expireTime;
-    if (!expireTime && ttl > 0 && creationTime > 0) {
-      calculatedExpireTime = creationTime + ttl;
+    if (!expireTime && ttl > 0) {
+      // Le TTL est le temps RESTANT, donc on ajoute à l'heure actuelle
+      const now = Math.floor(Date.now() / 1000);
+      calculatedExpireTime = now + ttl;
     }
+    
+    // Logger les informations du token pour débogage
+    const now = Math.floor(Date.now() / 1000);
+    const timeRemaining = calculatedExpireTime ? calculatedExpireTime - now : null;
+    const timeRemainingHours = timeRemaining ? (timeRemaining / 3600).toFixed(2) : 'N/A';
+    const timeRemainingDays = timeRemaining ? (timeRemaining / 86400).toFixed(2) : 'N/A';
+    
+    console.log('🔐 Métadonnées du token Vault:');
+    console.log(`  - TTL restant: ${ttl} secondes (${(ttl / 3600).toFixed(2)} heures, ${(ttl / 86400).toFixed(2)} jours)`);
+    console.log(`  - Date de création: ${creationTime ? new Date(creationTime * 1000).toLocaleString() : 'N/A'}`);
+    console.log(`  - Date d'expiration calculée: ${calculatedExpireTime ? new Date(calculatedExpireTime * 1000).toLocaleString() : 'N/A'}`);
+    console.log(`  - Temps restant: ${timeRemainingHours} heures (${timeRemainingDays} jours)`);
+    console.log(`  - Expire_time depuis API: ${expireTime ? new Date(expireTime * 1000).toLocaleString() : 'Non fourni'}`);
     
     return {
       ttl: ttl,
       creationTime: creationTime,
       expireTime: calculatedExpireTime,
       renewable: data.renewable || false,
-      entityId: data.entity_id
+      entityId: data.entity_id,
+      creationTtl: data.creation_ttl || null
     };
   } catch (error) {
     console.error('Erreur lors de la récupération des métadonnées du token:', error);
@@ -212,9 +257,55 @@ async function isTokenValid(vaultUrl, token) {
   }
 }
 
+// Fonction pour renouveler un token Vault
+// @param {string} vaultUrl - URL du serveur Vault
+// @param {string} token - Token à renouveler
+// @param {number} increment - Durée du renouvellement en secondes (par défaut: 99 jours = 8553600 secondes)
+// @returns {Promise<Object|null>} - Métadonnées du token renouvelé ou null en cas d'erreur
+async function renewToken(vaultUrl, token, increment = 8553600) {
+  try {
+    console.log(`🔄 Tentative de renouvellement du token pour ${(increment / 86400).toFixed(2)} jours...`);
+    
+    const renewResponse = await fetch(`${vaultUrl.replace(/\/$/, '')}/v1/auth/token/renew-self`, {
+      method: 'POST',
+      headers: {
+        'X-Vault-Token': token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        increment: increment
+      })
+    });
+    
+    if (!renewResponse.ok) {
+      const errorData = await renewResponse.json().catch(() => ({}));
+      const errorMsg = errorData.errors?.[0] || `Erreur ${renewResponse.status}`;
+      throw new Error(`Impossible de renouveler le token: ${errorMsg}`);
+    }
+    
+    const renewData = await renewResponse.json();
+    console.log('✅ Token renouvelé avec succès');
+    
+    // Récupérer les nouvelles métadonnées du token
+    const newMetadata = await getTokenMetadata(vaultUrl, token);
+    
+    if (newMetadata) {
+      const timeRemaining = newMetadata.expireTime ? newMetadata.expireTime - Math.floor(Date.now() / 1000) : null;
+      const days = timeRemaining ? (timeRemaining / 86400).toFixed(2) : 'N/A';
+      console.log(`✅ Nouveau TTL: ${days} jours restants`);
+    }
+    
+    return newMetadata;
+  } catch (error) {
+    console.error('Erreur lors du renouvellement du token:', error);
+    return null;
+  }
+}
+
 // Fonction pour régénérer automatiquement le token via OIDC et le sauvegarder
-// Cette fonction ouvre le flux OIDC, récupère le nouveau token et le sauvegarde avec le PIN existant
-async function regenerateTokenAndSave(vaultUrl, pin) {
+// Cette fonction ouvre le flux OIDC, récupère le nouveau token et le sauvegarde avec le PIN existant ou crée un nouveau PIN
+// createNewPin: si true, ne sauvegarde pas avec le PIN existant mais affiche le modal de création de PIN
+async function regenerateTokenAndSave(vaultUrl, pin, createNewPin = false) {
   return new Promise((resolve, reject) => {
     // Afficher un message à l'utilisateur
     showToast('Régénération du token en cours...', 'info');
@@ -267,44 +358,61 @@ async function regenerateTokenAndSave(vaultUrl, pin) {
           }
         }
         
-        // Chiffrer le nouveau token avec le PIN existant
-        const encryptedToken = await window.cryptoUtils.encrypt(newToken, pin);
-        const pinHash = await window.cryptoUtils.sha256(pin);
-        
-        // Préparer les données à sauvegarder
-        const dataToSave = {
-          vaultUrl: vaultUrl,
-          encryptedToken: encryptedToken,
-          pinHash: pinHash
-        };
-        
-        if (kvMount) {
-          dataToSave.kvMount = kvMount;
+        if (createNewPin) {
+          // Si on doit créer un nouveau PIN, stocker le token temporairement et afficher le modal de création
+          pendingToken = newToken;
+          pendingDisplayName = kvMount;
+          pendingIsOAuth = true; // Régénération via OAuth
+          pendingTokenMetadata = tokenMetadata;
+          isRegeneratingToken = true;
+          regeneratedToken = newToken;
+          
+          hidePinChoiceModal();
+          showCreatePinModal();
+          
+          // Ne pas résoudre la promesse ici, elle sera résolue après la création du PIN
+          // On retourne le token pour que l'authentification puisse continuer
+          resolve(newToken);
+        } else {
+          // Chiffrer le nouveau token avec le PIN existant
+          const encryptedToken = await window.cryptoUtils.encrypt(newToken, pin);
+          const pinHash = await window.cryptoUtils.sha256(pin);
+          
+          // Préparer les données à sauvegarder
+          const dataToSave = {
+            vaultUrl: vaultUrl,
+            encryptedToken: encryptedToken,
+            pinHash: pinHash
+          };
+          
+          if (kvMount) {
+            dataToSave.kvMount = kvMount;
+          }
+          
+          // Ajouter les métadonnées du token si disponibles
+          if (tokenMetadata) {
+            if (tokenMetadata.expireTime) {
+              dataToSave.tokenExpireTime = tokenMetadata.expireTime;
+            }
+            if (tokenMetadata.ttl) {
+              dataToSave.tokenTtl = tokenMetadata.ttl;
+            }
+            if (tokenMetadata.creationTime) {
+              dataToSave.tokenCreationTime = tokenMetadata.creationTime;
+            }
+          }
+          
+          // Sauvegarder le nouveau token
+          await new Promise((resolve) => {
+            chrome.storage.sync.set(dataToSave, resolve);
+          });
+          
+          console.log('Token régénéré et sauvegardé avec succès');
+          showToast('Token régénéré avec succès', 'success');
+          
+          // Retourner le token déchiffré pour continuer l'authentification
+          resolve(newToken);
         }
-        
-        // Ajouter les métadonnées du token si disponibles
-        if (tokenMetadata) {
-          if (tokenMetadata.expireTime) {
-            dataToSave.tokenExpireTime = tokenMetadata.expireTime;
-          }
-          if (tokenMetadata.ttl) {
-            dataToSave.tokenTtl = tokenMetadata.ttl;
-          }
-          if (tokenMetadata.creationTime) {
-            dataToSave.tokenCreationTime = tokenMetadata.creationTime;
-          }
-        }
-        
-        // Sauvegarder le nouveau token
-        await new Promise((resolve) => {
-          chrome.storage.sync.set(dataToSave, resolve);
-        });
-        
-        console.log('Token régénéré et sauvegardé avec succès');
-        showToast('Token régénéré avec succès', 'success');
-        
-        // Retourner le token déchiffré pour continuer l'authentification
-        resolve(newToken);
       } catch (error) {
         // Restaurer le handler original en cas d'erreur
         window.handleVaultToken = originalHandleVaultToken;
@@ -746,14 +854,14 @@ async function regenerateTokenAndSave(vaultUrl, pin) {
                     throw new Error(`Erreur mount: ${errorMsg}`);
                   }
 
-                  // Token valide et mount créé, stocker temporairement
-                  // Pour OAuth, utiliser directement l'entityName comme Master Key (pas de mot de passe)
-                  pendingToken = result.token;
-                  pendingDisplayName = entityName;
-                  pendingIsOAuth = true; // Authentification OAuth
-                  hideSetupModal();
-                  // Passer directement au modal PIN (pas de mot de passe pour OAuth)
-                  showCreatePinModal();
+                  // Token valide et mount créé, utiliser le handler temporaire
+                  // Le handler vérifiera createNewPin et décidera s'il faut créer un nouveau PIN ou réutiliser l'existant
+                  if (window.handleVaultToken) {
+                    await window.handleVaultToken(result.token);
+                  } else {
+                    // Fallback si le handler n'existe pas (ne devrait pas arriver)
+                    throw new Error('Handler de token non disponible');
+                  }
                 } catch (e) {
                   callbackProcessed = true;
                   chrome.tabs.onUpdated.removeListener(tabUpdateListener);
@@ -1508,6 +1616,16 @@ function hideCreatePinModal() {
   createPinModal.classList.remove('show');
 }
 
+// Afficher le modal de choix PIN
+function showPinChoiceModal() {
+  pinChoiceModal.classList.add('show');
+}
+
+// Cacher le modal de choix PIN
+function hidePinChoiceModal() {
+  pinChoiceModal.classList.remove('show');
+}
+
 // Toggle visibilité des mots de passe
 if (toggleCreatePassword) {
   toggleCreatePassword.addEventListener('click', () => {
@@ -1643,34 +1761,124 @@ async function authenticate(pin) {
     }
     // Si tokenExpireTime n'existe pas, on continue la vérification via l'API Vault
 
-    // Vérifier que le token est valide via l'API Vault
-    const testResponse = await fetch(`${stored.vaultUrl.replace(/\/$/, '')}/v1/auth/token/lookup-self`, {
-      method: 'GET',
-      headers: {
-        'X-Vault-Token': decryptedToken,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!testResponse.ok) {
-      // Token invalide selon l'API, régénération nécessaire
+    // Vérifier que le token est encore valide via l'API Vault et récupérer les métadonnées
+    const tokenMetadata = await getTokenMetadata(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken);
+    
+    if (!tokenMetadata) {
+      // Impossible de récupérer les métadonnées, considérer comme invalide
       tokenNeedsRegeneration = true;
-      console.log('Token invalide selon l\'API, régénération nécessaire');
+      console.log('Impossible de récupérer les métadonnées du token, régénération nécessaire');
+    } else {
+      // Logger le temps restant à chaque connexion
+      const timeRemaining = tokenMetadata.expireTime ? tokenMetadata.expireTime - now : null;
+      if (timeRemaining !== null) {
+        const hours = (timeRemaining / 3600).toFixed(2);
+        const days = (timeRemaining / 86400).toFixed(2);
+        console.log(`⏰ Connexion réussie - Temps restant avant expiration: ${hours} heures (${days} jours)`);
+        
+        if (timeRemaining < 3600) {
+          console.warn(`⚠️ Attention: Le token expire dans moins d'une heure (${Math.floor(timeRemaining / 60)} minutes)`);
+        }
+      }
+      
+      // Vérifier si le token est expiré selon les métadonnées récupérées
+      if (tokenMetadata.expireTime && tokenMetadata.expireTime <= now) {
+        tokenNeedsRegeneration = true;
+        console.log('Token expiré selon les métadonnées récupérées, régénération nécessaire');
+      }
+      
+      // Mettre à jour la date d'expiration sauvegardée avec les valeurs réelles
+      if (tokenMetadata.expireTime) {
+        await new Promise((resolve) => {
+          chrome.storage.sync.set({ tokenExpireTime: tokenMetadata.expireTime }, resolve);
+        });
+        console.log(`✅ Date d'expiration mise à jour: ${new Date(tokenMetadata.expireTime * 1000).toLocaleString()}`);
+      }
+      
+      // Renouveler le token automatiquement s'il est renouvelable et proche de l'expiration
+      // (moins de 24 heures restantes ou TTL initial de 1 heure)
+      if (tokenMetadata.renewable && tokenMetadata.ttl > 0) {
+        const shouldRenew = tokenMetadata.ttl < 86400 || (tokenMetadata.creationTtl && tokenMetadata.creationTtl <= 3600);
+        
+        if (shouldRenew) {
+          console.log('🔄 Token renouvelable détecté, renouvellement automatique...');
+          showToast('Renouvellement automatique du token...', 'info');
+          
+          // Renouveler pour 99 jours (8553600 secondes)
+          const renewedMetadata = await renewToken(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken, 8553600);
+          
+          if (renewedMetadata && renewedMetadata.expireTime) {
+            // Mettre à jour le token dans le stockage avec la nouvelle date d'expiration
+            await new Promise((resolve) => {
+              chrome.storage.sync.set({ tokenExpireTime: renewedMetadata.expireTime }, resolve);
+            });
+            
+            // Mettre à jour les métadonnées locales
+            tokenMetadata.expireTime = renewedMetadata.expireTime;
+            tokenMetadata.ttl = renewedMetadata.ttl;
+            
+            const newTimeRemaining = renewedMetadata.expireTime - now;
+            const newDays = (newTimeRemaining / 86400).toFixed(2);
+            console.log(`✅ Token renouvelé avec succès - Nouveau TTL: ${newDays} jours`);
+            showToast(`Token renouvelé jusqu'à ${newDays} jours`, 'success');
+          } else {
+            console.warn('⚠️ Le renouvellement a échoué, mais le token actuel reste valide');
+          }
+        }
+      }
     }
-    // Si testResponse.ok est vrai, le token est valide selon Vault
-    // On fait confiance à cette réponse et on ne fait pas de double vérification
 
     // Si le token doit être régénéré, déclencher le processus automatiquement
     if (tokenNeedsRegeneration) {
       console.log('Token expiré, régénération automatique en cours...');
       showToast('Token expiré. Régénération automatique en cours...', 'info');
       
+      // Fermer le modal PIN avant d'ouvrir la fenêtre Google OAuth
+      hideAuthModal();
+      
       try {
-        // Régénérer le token automatiquement via OIDC
-        const newToken = await regenerateTokenAndSave(stored.vaultUrl || 'https://vault.exem.fr/', pin);
+        // Vérifier si un PIN existe déjà
+        const hasExistingPin = !!stored.pinHash;
         
-        // Utiliser le nouveau token pour continuer l'authentification
-        decryptedToken = newToken;
+        if (hasExistingPin) {
+          // Afficher le modal de choix
+          showPinChoiceModal();
+          
+          // Attendre le choix de l'utilisateur
+          const userChoice = await new Promise((resolve) => {
+            regenerateTokenResolve = resolve;
+          });
+          
+          // Régénérer le token avec le choix de l'utilisateur
+          const newToken = await regenerateTokenAndSave(
+            stored.vaultUrl || 'https://vault.exem.fr/', 
+            pin, 
+            userChoice === 'createNew' // createNewPin = true si l'utilisateur veut créer un nouveau PIN
+          );
+          
+          // Si l'utilisateur a choisi de créer un nouveau PIN, le modal de création est déjà affiché
+          // et la promesse sera résolue après la création du PIN
+          if (userChoice === 'createNew') {
+            // Attendre que le PIN soit créé (la promesse sera résolue dans le gestionnaire de création de PIN)
+            // Pour l'instant, on retourne le token pour continuer
+            decryptedToken = newToken;
+            // Ne pas continuer l'authentification ici, attendre la création du PIN
+            return;
+          } else {
+            // Utiliser le nouveau token pour continuer l'authentification
+            decryptedToken = newToken;
+            // Réinitialiser les variables de régénération
+            isRegeneratingToken = false;
+            regeneratedToken = null;
+            pendingTokenMetadata = null;
+          }
+        } else {
+          // Pas de PIN existant, régénérer directement avec le PIN actuel
+          const newToken = await regenerateTokenAndSave(stored.vaultUrl || 'https://vault.exem.fr/', pin);
+          
+          // Utiliser le nouveau token pour continuer l'authentification
+          decryptedToken = newToken;
+        }
       } catch (error) {
         console.error('Erreur lors de la régénération automatique:', error);
         showToast('Erreur lors de la régénération. Veuillez vous reconnecter manuellement.', 'error');
@@ -1678,15 +1886,6 @@ async function authenticate(pin) {
         showSetupModal();
         throw new Error('Impossible de régénérer le token automatiquement. Veuillez vous reconnecter.');
       }
-    }
-
-    // Récupérer les métadonnées du token pour mettre à jour le TTL si nécessaire
-    const tokenMetadata = await getTokenMetadata(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken);
-    if (tokenMetadata && tokenMetadata.expireTime) {
-      // Mettre à jour la date d'expiration dans le storage
-      await new Promise((resolve) => {
-        chrome.storage.sync.set({ tokenExpireTime: tokenMetadata.expireTime }, resolve);
-      });
     }
 
     // Récupérer l'entity_name si kvMount n'est pas défini
@@ -1719,6 +1918,13 @@ async function authenticate(pin) {
     settings.kvMount = mountPath;
     settings.vaultToken = decryptedToken;
     isAuthenticated = true;
+
+    // Réinitialiser les variables de régénération si nécessaire
+    if (isRegeneratingToken) {
+      isRegeneratingToken = false;
+      regeneratedToken = null;
+      pendingTokenMetadata = null;
+    }
 
     // Charger les catégories depuis Vault après authentification
     await loadCategoriesFromVault();
@@ -1788,6 +1994,46 @@ function clearSecretFields() {
   }
 }
 
+// Fonction pour récupérer la valeur du mot de passe d'un secret
+async function getPasswordValue(categoryPath, secretName) {
+  try {
+    const authenticated = await ensureAuthenticated();
+    if (!authenticated) {
+      return null;
+    }
+
+    // Lire le secret de la catégorie
+    const res = await readSecret(categoryPath);
+    const categoryData = (res && res.data && res.data.data) || {};
+    
+    // Extraire le secret spécifique par son nom
+    const secretData = categoryData[secretName];
+    
+    if (!secretData || !Array.isArray(secretData)) {
+      return null;
+    }
+    
+    // Chercher uniquement la clé exacte "Mot de passe" (quelle que soit sa position)
+    const passwordItem = secretData.find(item => {
+      if (!item || !item.key) return false;
+      return item.key.trim() === 'Mot de passe';
+    });
+    
+    if (!passwordItem || !passwordItem.value) {
+      return null;
+    }
+    
+    // Déchiffrer la valeur si nécessaire en utilisant la fonction existante
+    const context = `vault-secret-${categoryPath}-${secretName}-${passwordItem.key}`;
+    const decryptedValue = await decryptFieldValue(passwordItem.value, context);
+    
+    return decryptedValue;
+  } catch (e) {
+    console.error('Erreur lors de la récupération du mot de passe:', e);
+    return null;
+  }
+}
+
 // Fonction pour afficher les secrets sous forme de cartes
 function displayCards(secrets) {
   if (!cardsContainer) return;
@@ -1829,7 +2075,8 @@ function displayCards(secrets) {
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     
-    if (secret.hasPasswordLabel && secret.value) {
+    // Toujours afficher le bouton copier si le secret a un path (catégorie)
+    if (secret.path) {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'card-action-btn';
       copyBtn.title = 'Copier le mot de passe';
@@ -1837,16 +2084,33 @@ function displayCards(secrets) {
       copyBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
-          await navigator.clipboard.writeText(secret.value);
-          showToast('Mot de passe copié', 'success');
+          // Charger le secret complet et trouver la valeur du mot de passe
+          const passwordValue = await getPasswordValue(secret.path, secret.key);
+          if (passwordValue) {
+            await navigator.clipboard.writeText(passwordValue);
+            showToast('Mot de passe copié', 'success');
+          } else {
+            showToast('Aucun mot de passe trouvé', 'error');
+          }
         } catch (err) {
-          const textarea = document.createElement('textarea');
-          textarea.value = secret.value;
-          document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textarea);
-          showToast('Mot de passe copié', 'success');
+          console.error('Erreur lors de la copie:', err);
+          // Essayer avec la méthode de fallback
+          try {
+            const passwordValue = await getPasswordValue(secret.path, secret.key);
+            if (passwordValue) {
+              const textarea = document.createElement('textarea');
+              textarea.value = passwordValue;
+              document.body.appendChild(textarea);
+              textarea.select();
+              document.execCommand('copy');
+              document.body.removeChild(textarea);
+              showToast('Mot de passe copié', 'success');
+            } else {
+              showToast('Aucun mot de passe trouvé', 'error');
+            }
+          } catch (fallbackErr) {
+            showToast('Erreur lors de la copie', 'error');
+          }
         }
       });
       actions.appendChild(copyBtn);
@@ -3180,6 +3444,23 @@ createPasswordBtn.addEventListener('click', async () => {
   showCreatePinModal();
 });
 
+// Gestionnaires d'événements pour le modal de choix PIN
+reusePinBtn.addEventListener('click', async () => {
+  hidePinChoiceModal();
+  if (regenerateTokenResolve) {
+    regenerateTokenResolve('reuse');
+    regenerateTokenResolve = null;
+  }
+});
+
+createNewPinBtn.addEventListener('click', async () => {
+  hidePinChoiceModal();
+  if (regenerateTokenResolve) {
+    regenerateTokenResolve('createNew');
+    regenerateTokenResolve = null;
+  }
+});
+
 // Gestion de la création du PIN
 createPinBtn.addEventListener('click', async () => {
   const pin = createPinInput.value;
@@ -3215,7 +3496,8 @@ createPinBtn.addEventListener('click', async () => {
 
   try {
     // Récupérer les métadonnées du token (TTL, date d'expiration)
-    const tokenMetadata = await getTokenMetadata(settings.vaultUrl || 'https://vault.exem.fr/', pendingToken);
+    // Utiliser pendingTokenMetadata si disponible (régénération), sinon récupérer
+    const tokenMetadata = pendingTokenMetadata || await getTokenMetadata(settings.vaultUrl || 'https://vault.exem.fr/', pendingToken);
     
     // Hasher le PIN en SHA256
     const pinHash = await window.cryptoUtils.sha256(pin);
@@ -3264,16 +3546,50 @@ createPinBtn.addEventListener('click', async () => {
     });
 
     hideCreatePinModal();
-    showToast('Configuration enregistrée avec succès !', 'success');
+    
+    // Si on est en train de régénérer le token, continuer l'authentification directement
+    if (isRegeneratingToken && regeneratedToken) {
+      showToast('Token régénéré et PIN mis à jour avec succès', 'success');
+      
+      // Continuer l'authentification avec le token régénéré
+      try {
+        const stored = await new Promise((resolve) => {
+          chrome.storage.sync.get(['vaultUrl', 'kvMount'], resolve);
+        });
+        
+        currentDecryptedToken = regeneratedToken;
+        currentPin = pin;
+        settings.vaultUrl = stored.vaultUrl || 'https://vault.exem.fr/';
+        settings.kvMount = kvMount;
+        settings.vaultToken = regeneratedToken;
+        isAuthenticated = true;
+        
+        // Charger les catégories depuis Vault après authentification
+        await loadCategoriesFromVault();
+        
+        // Réinitialiser les variables de régénération
+        isRegeneratingToken = false;
+        regeneratedToken = null;
+        pendingTokenMetadata = null;
+      } catch (error) {
+        console.error('Erreur lors de la finalisation de l\'authentification:', error);
+        showToast('Erreur lors de l\'authentification: ' + error.message, 'error');
+        showAuthModal();
+      }
+    } else {
+      showToast('Configuration enregistrée avec succès !', 'success');
+      
+      // Maintenant demander l'authentification rapide pour utiliser l'extension
+      setTimeout(() => {
+        showAuthModal();
+      }, 500);
+    }
+    
     pendingToken = null;
     pendingDisplayName = null;
     pendingMasterPassword = null;
     pendingIsOAuth = false;
-
-    // Maintenant demander l'authentification rapide pour utiliser l'extension
-    setTimeout(() => {
-      showAuthModal();
-    }, 500);
+    pendingTokenMetadata = null;
   } catch (error) {
     createPinError.textContent = error.message || 'Erreur lors de l\'enregistrement';
     createPinError.style.display = 'block';

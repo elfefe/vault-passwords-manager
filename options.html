@@ -65,6 +65,20 @@
       transition: all 0.2s ease;
     }
 
+    #vaultToken {
+      padding-right: 50px !important;
+    }
+
+    .copy-btn:hover {
+      background: rgba(114, 9, 183, 0.1) !important;
+      color: var(--color-violet) !important;
+    }
+
+    .copy-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
     input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus {
       outline: none;
       border-color: var(--color-violet);
@@ -273,7 +287,15 @@
     <div id="googleSignInButton" style="display: flex; justify-content: center; margin-bottom: 16px;"></div>
     <div style="text-align: center; color: #6b7280; font-size: 0.9em; margin: 16px 0;">ou</div>
     <label>Token Vault (manuel)</label>
-    <input id="vaultToken" type="password" placeholder="s.xxxxxx" />
+    <div style="position: relative;">
+      <input id="vaultToken" type="password" placeholder="s.xxxxxx" />
+      <button id="copyTokenBtn" class="copy-btn" title="Copier le token déchiffré" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: var(--color-dark-gray); cursor: pointer; padding: 8px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+    </div>
   </div>
   <button id="saveBtn">Enregistrer et authentifier</button>
   <button id="clearBtn" class="secondary">Réinitialiser</button>

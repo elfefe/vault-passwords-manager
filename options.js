@@ -3,6 +3,7 @@ const vaultTokenInput = document.getElementById('vaultToken');
 const kvMountInput = document.getElementById('kvMount');
 const saveBtn = document.getElementById('saveBtn');
 const clearBtn = document.getElementById('clearBtn');
+const copyTokenBtn = document.getElementById('copyTokenBtn');
 const pinModal = document.getElementById('pinModal');
 const pinInput = document.getElementById('pinInput');
 const pinConfirm = document.getElementById('pinConfirm');
@@ -433,14 +434,16 @@ async function getTokenMetadata(vaultUrl, token) {
     const data = tokenData.data || {};
     
     // Extraire les informations de validité
-    const ttl = data.ttl || 0; // TTL en secondes
+    const ttl = data.ttl || 0; // TTL RESTANT en secondes (temps restant avant expiration)
     const creationTime = data.creation_time || 0; // Timestamp Unix
     const expireTime = data.expire_time || null; // Timestamp Unix ou null si pas d'expiration
     
     // Calculer la date d'expiration si elle n'est pas fournie mais que le TTL existe
     let calculatedExpireTime = expireTime;
-    if (!expireTime && ttl > 0 && creationTime > 0) {
-      calculatedExpireTime = creationTime + ttl;
+    if (!expireTime && ttl > 0) {
+      // Le TTL est le temps RESTANT, donc on ajoute à l'heure actuelle
+      const now = Math.floor(Date.now() / 1000);
+      calculatedExpireTime = now + ttl;
     }
     
     return {
@@ -998,6 +1001,60 @@ saveBtn.addEventListener('click', async () => {
       showPinModal();
     }
   });
+});
+
+// Gestionnaire pour le bouton de copie du token
+copyTokenBtn.addEventListener('click', async () => {
+  try {
+    // Vérifier qu'un token est stocké
+    const stored = await new Promise((resolve) => {
+      chrome.storage.sync.get(['encryptedToken', 'pinHash'], resolve);
+    });
+
+    if (!stored.encryptedToken || !stored.pinHash) {
+      alert('Aucun token stocké. Veuillez d\'abord configurer l\'extension.');
+      return;
+    }
+
+    // Demander le PIN à l'utilisateur
+    const pin = await promptForPin(
+      '🔐 Copier le token',
+      'Entrez votre PIN pour déchiffrer et copier le token'
+    );
+
+    if (!pin) {
+      return; // L'utilisateur a annulé
+    }
+
+    // Vérifier le PIN
+    const pinHash = await window.cryptoUtils.sha256(pin);
+    if (pinHash !== stored.pinHash) {
+      alert('Code PIN incorrect');
+      return;
+    }
+
+    // Déchiffrer le token
+    const decryptedToken = await window.cryptoUtils.decrypt(stored.encryptedToken, pin);
+
+    // Copier dans le presse-papiers
+    await navigator.clipboard.writeText(decryptedToken);
+
+    // Afficher un message de confirmation
+    const originalTitle = copyTokenBtn.title;
+    copyTokenBtn.title = 'Token copié !';
+    copyTokenBtn.style.color = 'var(--color-violet)';
+    
+    setTimeout(() => {
+      copyTokenBtn.title = originalTitle;
+      copyTokenBtn.style.color = '';
+    }, 2000);
+
+    // Afficher une notification
+    alert('✅ Token copié dans le presse-papiers');
+  } catch (error) {
+    console.error('Erreur lors de la copie du token:', error);
+    alert('Erreur lors de la copie du token: ' + error.message);
+  }
 });
 
 clearBtn.addEventListener('click', () => {

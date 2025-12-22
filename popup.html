@@ -45,6 +45,10 @@
     <div class="main-layout">
       <aside class="sidebar">
         <div class="category-container">
+          <!-- En-tête fixe pour les catégories -->
+          <div class="category-header">
+            <span class="table-title">Tiroirs</span>
+          </div>
           <!-- Liste de catégories dans la barre de gauche -->
           <div id="categoryList" class="category-list">
             <div class="category-empty">Chargement des catégories...</div>
@@ -72,6 +76,10 @@
       <main class="content-area">
         <!-- Vue liste des cartes -->
         <div id="cardsView" class="view-container">
+          <!-- En-tête fixe pour les secrets -->
+          <div class="cards-header">
+            <span class="table-title">Classeurs</span>
+          </div>
           <div id="cardsContainer" class="cards-container">
             <!-- Les cartes seront générées dynamiquement ici -->
           </div>
@@ -270,6 +278,18 @@
         <p>Entrez votre code à 4 chiffres</p>
         <input id="authPinInput" type="password" class="pin-input" placeholder="••••" maxlength="4" />
         <p id="authError" style="color: #ef4444; font-size: 0.9em; margin-top: 8px; display: none;"></p>
+      </div>
+    </div>
+
+    <!-- Modal de choix PIN lors de la régénération -->
+    <div id="pinChoiceModal" class="auth-modal">
+      <div class="auth-modal-content">
+        <h3>Régénération du token</h3>
+        <p style="margin-bottom: 16px;">Un PIN existe déjà. Que souhaitez-vous faire ?</p>
+        <div style="display: flex; gap: 8px; flex-direction: column;">
+          <button id="reusePinBtn" class="btn btn-primary" style="flex: 1;">Réutiliser le PIN existant</button>
+          <button id="createNewPinBtn" class="btn btn-secondary" style="flex: 1;">Créer un nouveau PIN</button>
+        </div>
       </div>
     </div>
   </div>

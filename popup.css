@@ -311,6 +311,12 @@ h1 {
   overflow: hidden;
 }
 
+.category-header {
+  flex-shrink: 0;
+  padding: 8px 0;
+  margin-bottom: 4px;
+}
+
 .category-icon {
   position: absolute;
   right: 12px;
@@ -528,13 +534,19 @@ h1 {
   overflow: hidden;
 }
 
+.cards-header {
+  flex-shrink: 0;
+  padding: 16px 20px 8px 20px;
+}
+
 .cards-container {
   flex: 1;
-  padding: 20px;
+  padding: 0 20px 20px 20px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 .card {
@@ -700,26 +712,28 @@ h1 {
 .btn-back {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 600;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
   border: none;
-  border-radius: 8px;
-  background: var(--color-light-gray);
-  color: var(--color-dark-navy);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-dark-gray);
   cursor: pointer;
   transition: all 0.2s ease;
+  opacity: 0.7;
 }
 
 .btn-back:hover {
-  background: #d5d0e0;
-  transform: translateY(-1px);
+  background: rgba(114, 9, 183, 0.08);
+  color: var(--color-violet);
+  opacity: 1;
 }
 
 .btn-back svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .detail-title {
@@ -735,12 +749,12 @@ h1 {
 .detail-title-input {
   flex: 1;
   margin: 0;
-  padding: 8px 12px;
-  font-size: 18px;
-  font-weight: 700;
+  padding: 6px 12px;
+  font-size: 15px;
+  font-weight: 600;
   border: 2px solid transparent;
-  border-radius: 8px;
-  background: linear-gradient(135deg, rgba(114, 9, 183, 0.1), rgba(247, 37, 133, 0.1));
+  border-radius: 6px;
+  background: rgba(114, 9, 183, 0.05);
   color: var(--color-dark-navy);
   transition: all 0.2s ease;
   font-family: inherit;
