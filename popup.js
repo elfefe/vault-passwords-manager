@@ -24,6 +24,7 @@ const detailView = document.getElementById('detailView');
 const backBtn = document.getElementById('backBtn');
 const detailTitle = document.getElementById('detailTitle');
 const detailTitleInput = document.getElementById('detailTitleInput');
+const detailCategorySelect = document.getElementById('detailCategorySelect');
 let currentCategoryPath = null;
 let currentSecretName = null; // Nom du secret actuellement édité
 let draggedSecretRow = null; // Ligne actuellement déplacée dans le tableau de détails
@@ -1802,7 +1803,6 @@ async function authenticate(pin) {
         
         if (shouldRenew) {
           console.log('🔄 Token renouvelable détecté, renouvellement automatique...');
-          showToast('Renouvellement automatique du token...', 'info');
           
           // Renouveler pour 99 jours (8553600 secondes)
           const renewedMetadata = await renewToken(stored.vaultUrl || 'https://vault.exem.fr/', decryptedToken, 8553600);
@@ -1820,7 +1820,6 @@ async function authenticate(pin) {
             const newTimeRemaining = renewedMetadata.expireTime - now;
             const newDays = (newTimeRemaining / 86400).toFixed(2);
             console.log(`✅ Token renouvelé avec succès - Nouveau TTL: ${newDays} jours`);
-            showToast(`Token renouvelé jusqu'à ${newDays} jours`, 'success');
           } else {
             console.warn('⚠️ Le renouvellement a échoué, mais le token actuel reste valide');
           }
@@ -1930,6 +1929,10 @@ async function authenticate(pin) {
     await loadCategoriesFromVault();
 
     hideAuthModal();
+    
+    // Vérifier s'il y a des données de formulaire en attente après authentification
+    await checkPendingFormData();
+    
     return true;
   } catch (error) {
     throw error;
@@ -2298,10 +2301,15 @@ async function navigateToDetail(secret, index, isNew = false, withGeneratedPassw
   if (isNew) {
     // Nouveau secret - initialiser avec un nom par défaut et un champ "Mot de passe"
     currentSecretName = null;
+    currentCategoryPath = null; // Réinitialiser la catégorie pour un nouveau secret
     if (detailTitleInput) {
       detailTitleInput.value = 'Nouveau secret';
     } else if (detailTitle) {
       detailTitle.textContent = 'Nouveau secret';
+    }
+    // Réinitialiser le dropdown de catégorie
+    if (detailCategorySelect) {
+      detailCategorySelect.value = '';
     }
     clearSecretFields();
     // Ajouter le champ "Mot de passe" par défaut
@@ -2337,6 +2345,10 @@ async function navigateToDetail(secret, index, isNew = false, withGeneratedPassw
       // Mettre à jour le select de catégorie si nécessaire
       if (categorySelect && categorySelect.value !== categoryPathToUse) {
         categorySelect.value = categoryPathToUse;
+      }
+      // Mettre à jour le dropdown de catégorie dans la vue de détail
+      if (detailCategorySelect && detailCategorySelect.value !== categoryPathToUse) {
+        detailCategorySelect.value = categoryPathToUse;
       }
     }
     
@@ -2389,6 +2401,14 @@ async function loadSecretDetail(secretPath) {
   currentSecretName = secretName;
   if (categoryPath) {
     currentCategoryPath = categoryPath;
+    // Mettre à jour le dropdown de catégorie dans la vue de détail
+    if (detailCategorySelect && detailCategorySelect.value !== categoryPath) {
+      detailCategorySelect.value = categoryPath;
+    }
+    // Mettre à jour aussi le select principal si nécessaire
+    if (categorySelect && categorySelect.value !== categoryPath) {
+      categorySelect.value = categoryPath;
+    }
   }
   // Mettre à jour le champ de saisie du nom
   if (detailTitleInput) {
@@ -3176,9 +3196,27 @@ writeBtn.addEventListener('click', async () => {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
 
-  const categoryPath = getCurrentPath();
-  if (!categoryPath) {
-    showToast('Sélectionnez une catégorie ou créez-en une nouvelle', 'error');
+  // Vérifier d'abord le dropdown de catégorie dans la vue de détail
+  let newCategoryPath = null;
+  if (detailCategorySelect && detailCategorySelect.value) {
+    newCategoryPath = detailCategorySelect.value;
+  } else {
+    // Fallback sur getCurrentPath si le dropdown n'est pas défini
+    newCategoryPath = getCurrentPath();
+  }
+  
+  if (!newCategoryPath) {
+    showToast('⚠️ Veuillez sélectionner une catégorie avant de sauvegarder', 'error');
+    // Mettre en évidence le dropdown
+    if (detailCategorySelect) {
+      detailCategorySelect.focus();
+      detailCategorySelect.style.borderColor = '#ef4444';
+      detailCategorySelect.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.1)';
+      setTimeout(() => {
+        detailCategorySelect.style.borderColor = '#e5e7eb';
+        detailCategorySelect.style.boxShadow = 'none';
+      }, 2000);
+    }
     return;
   }
 
@@ -3192,24 +3230,36 @@ writeBtn.addEventListener('click', async () => {
     return;
   }
 
-  // Vérifier si le nom a changé pour un secret existant
-  let oldSecretPath = null;
-  if (currentSecretName && newName !== currentSecretName && currentSecretName !== 'Nouveau secret') {
-    oldSecretPath = `${categoryPath}/${currentSecretName}`;
-    // Vérifier si l'ancien secret existe
+  // Déterminer l'ancienne catégorie et le chemin du secret existant (si c'est une modification)
+  const oldCategoryPath = currentCategoryPath;
+  let secretExistsInOldCategory = false;
+  
+  // Si c'est un secret existant (pas nouveau), vérifier s'il existe dans l'objet de catégorie
+  if (currentSecretName && currentSecretName !== 'Nouveau secret' && oldCategoryPath) {
     try {
-      await readSecret(oldSecretPath);
-      // Si le nouveau nom existe déjà, demander confirmation
-      try {
-        await readSecret(`${categoryPath}/${newName}`);
-        if (!confirm(`Un secret avec le nom "${newName}" existe déjà. Voulez-vous le remplacer ?`)) {
-          return;
-        }
-      } catch (e) {
-        // Le nouveau nom n'existe pas, on peut continuer
+      // Lire l'ancienne catégorie pour vérifier si le secret existe
+      const oldCategoryRes = await readSecret(oldCategoryPath);
+      const oldCategoryData = (oldCategoryRes && oldCategoryRes.data && oldCategoryRes.data.data) || {};
+      secretExistsInOldCategory = oldCategoryData[currentSecretName] !== undefined;
+    } catch (e) {
+      // La catégorie n'existe pas ou erreur de lecture
+      secretExistsInOldCategory = false;
+    }
+  }
+
+  // Vérifier si le nom a changé OU si la catégorie a changé
+  const categoryChanged = oldCategoryPath && newCategoryPath !== oldCategoryPath;
+  const nameChanged = currentSecretName && newName !== currentSecretName && currentSecretName !== 'Nouveau secret';
+  
+  // Si le nom change dans la même catégorie, vérifier les conflits
+  if (nameChanged && !categoryChanged) {
+    try {
+      await readSecret(`${newCategoryPath}/${newName}`);
+      if (!confirm(`Un secret avec le nom "${newName}" existe déjà dans cette catégorie. Voulez-vous le remplacer ?`)) {
+        return;
       }
     } catch (e) {
-      // L'ancien secret n'existe pas, continuer normalement
+      // Le nouveau nom n'existe pas, on peut continuer
     }
   }
 
@@ -3223,8 +3273,9 @@ writeBtn.addEventListener('click', async () => {
     
     if (key) {
       // Chiffrer la valeur avec le système de chiffrement
+      // Utiliser la nouvelle catégorie pour le contexte de chiffrement
       try {
-        const context = `vault-secret-${categoryPath}-${newName}-${key}`;
+        const context = `vault-secret-${newCategoryPath}-${newName}-${key}`;
         const encryptedValue = await window.cryptoSystem.encryptSecret(val, currentPin, context);
         // Stocker l'objet chiffré directement (pas de JSON.stringify, Vault le fera)
         keyValueList.push({
@@ -3246,32 +3297,65 @@ writeBtn.addEventListener('click', async () => {
   }
 
   try {
-    // Lire le secret de la catégorie existant (qui contient tous les secrets de cette catégorie)
-    let categoryData = {};
-    try {
-      const res = await readSecret(categoryPath);
-      categoryData = (res && res.data && res.data.data) || {};
-    } catch (e) {
-      // La catégorie n'existe pas encore, créer un nouvel objet
-      categoryData = {};
-    }
-
-    // Si le nom a changé, supprimer l'ancien secret de l'objet
-    if (oldSecretPath && currentSecretName && currentSecretName !== 'Nouveau secret') {
-      const oldSecretName = currentSecretName;
-      if (categoryData[oldSecretName]) {
-        delete categoryData[oldSecretName];
+    // Si la catégorie a changé, supprimer le secret de l'ancienne catégorie
+    if (categoryChanged && oldCategoryPath && currentSecretName) {
+      try {
+        // Lire l'ancienne catégorie
+        const oldCategoryRes = await readSecret(oldCategoryPath);
+        const oldCategoryData = (oldCategoryRes && oldCategoryRes.data && oldCategoryRes.data.data) || {};
+        
+        // Supprimer le secret de l'ancienne catégorie s'il existe
+        if (oldCategoryData[currentSecretName]) {
+          delete oldCategoryData[currentSecretName];
+          // Sauvegarder l'ancienne catégorie sans ce secret
+          await writeSecret(oldCategoryPath, oldCategoryData);
+          console.log(`✅ Secret "${currentSecretName}" supprimé de la catégorie "${oldCategoryPath}"`);
+        } else {
+          console.log(`ℹ️ Secret "${currentSecretName}" n'existe pas dans la catégorie "${oldCategoryPath}" (déjà supprimé ou inexistant)`);
+        }
+      } catch (e) {
+        console.warn('Erreur lors de la suppression du secret de l\'ancienne catégorie:', e);
+        // Continuer quand même, le secret sera créé dans la nouvelle catégorie
       }
     }
 
-    // Ajouter ou mettre à jour le secret dans l'objet de la catégorie
-    categoryData[newName] = keyValueList;
+    // Lire la nouvelle catégorie (qui contient tous les secrets de cette catégorie)
+    let newCategoryData = {};
+    try {
+      const res = await readSecret(newCategoryPath);
+      newCategoryData = (res && res.data && res.data.data) || {};
+    } catch (e) {
+      // La catégorie n'existe pas encore, créer un nouvel objet
+      newCategoryData = {};
+    }
 
-    // Sauvegarder tout l'objet de la catégorie
-    await writeSecret(categoryPath, categoryData);
+    // Si le nom a changé dans la même catégorie, supprimer l'ancien secret
+    if (nameChanged && !categoryChanged && currentSecretName && currentSecretName !== 'Nouveau secret') {
+      const oldSecretName = currentSecretName;
+      if (newCategoryData[oldSecretName]) {
+        delete newCategoryData[oldSecretName];
+      }
+    }
+
+    // Ajouter ou mettre à jour le secret dans la nouvelle catégorie
+    newCategoryData[newName] = keyValueList;
+
+    // Sauvegarder tout l'objet de la nouvelle catégorie
+    await writeSecret(newCategoryPath, newCategoryData);
     
-    // Mettre à jour le nom actuel
+    // Mettre à jour les variables d'état
     currentSecretName = newName;
+    currentCategoryPath = newCategoryPath;
+    
+    // Mettre à jour le dropdown pour refléter la nouvelle catégorie
+    if (detailCategorySelect) {
+      detailCategorySelect.value = newCategoryPath;
+    }
+    
+    // Mettre à jour le select principal aussi
+    if (categorySelect) {
+      categorySelect.value = newCategoryPath;
+    }
 
     // Attendre un peu pour que Vault mette à jour
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -3279,18 +3363,20 @@ writeBtn.addEventListener('click', async () => {
     // Recharger les catégories et s'assurer que la catégorie est toujours sélectionnée
     await loadCategoriesFromVault();
 
-    // S'assurer que la catégorie est toujours sélectionnée après rechargement
-    // et recharger les cartes en arrière-plan (sans quitter la vue de détail)
+    // Recharger les cartes de la nouvelle catégorie en arrière-plan
     setTimeout(async () => {
-      if (categories.includes(categoryPath)) {
-        categorySelect.value = categoryPath;
+      if (categories.includes(newCategoryPath)) {
         if (cardsView && cardsContainer) {
-          await loadCardsFromVault(categoryPath);
+          await loadCardsFromVault(newCategoryPath);
         }
       }
     }, 100);
 
-    showToast('Secret sauvegardé avec succès (chiffré)', 'success');
+    if (categoryChanged) {
+      showToast(`✅ Secret transféré vers "${newCategoryPath}" et sauvegardé avec succès`, 'success');
+    } else {
+      showToast('Secret sauvegardé avec succès (chiffré)', 'success');
+    }
   } catch (e) {
     showToast('Erreur: ' + (e.response?.errors?.[0] || e.message), 'error');
   }
@@ -3818,6 +3904,33 @@ function updateCategorySelect() {
 
   const selectedCategory = categorySelect ? (categorySelect.value || '') : '';
 
+  // Mettre à jour aussi le dropdown de catégorie dans la vue de détail
+  if (detailCategorySelect) {
+    const previousDetailValue = detailCategorySelect.value;
+    detailCategorySelect.innerHTML = '';
+    
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = '-- Sélectionner une catégorie --';
+    detailCategorySelect.appendChild(defaultOption);
+    
+    categories.forEach(category => {
+      const option = document.createElement('option');
+      option.value = category;
+      option.textContent = category;
+      detailCategorySelect.appendChild(option);
+    });
+    
+    // Restaurer la sélection précédente ou utiliser la catégorie courante
+    if (previousDetailValue && categories.includes(previousDetailValue)) {
+      detailCategorySelect.value = previousDetailValue;
+    } else if (currentCategoryPath && categories.includes(currentCategoryPath)) {
+      detailCategorySelect.value = currentCategoryPath;
+    } else if (selectedCategory) {
+      detailCategorySelect.value = selectedCategory;
+    }
+  }
+
   // Mettre à jour la liste visible des catégories dans la sidebar
   if (categoryList) {
     categoryList.innerHTML = '';
@@ -3865,8 +3978,19 @@ function getCurrentPath() {
 }
 
 // Écouter les changements de catégorie pour charger automatiquement les secrets
+// Le dropdown de catégorie dans la vue de détail ne fait rien immédiatement
+// Le changement de catégorie ne prend effet qu'à la sauvegarde
+
 categorySelect.addEventListener('change', async () => {
   const path = getCurrentPath();
+  // Synchroniser le dropdown de catégorie dans la vue de détail seulement si on n'est pas en train d'éditer un secret
+  // (pour éviter de changer la catégorie pendant l'édition)
+  if (detailView && detailView.style.display === 'none') {
+    // On n'est pas dans la vue de détail, synchroniser normalement
+    if (detailCategorySelect && detailCategorySelect.value !== path) {
+      detailCategorySelect.value = path || '';
+    }
+  }
   // Revenir à la vue des cartes quand on change de catégorie
   if (cardsView && detailView) {
     detailView.style.display = 'none';
@@ -3969,6 +4093,238 @@ async function initialize() {
   }
 
   // Ne pas initialiser de champs par défaut - les données viennent de Vault
+  
+  // Vérifier s'il y a des données de formulaire en attente de sauvegarde
+  checkPendingFormData();
+}
+
+/**
+ * Vérifie et gère les données de formulaire en attente de sauvegarde
+ */
+async function checkPendingFormData() {
+  try {
+    const stored = await new Promise((resolve) => {
+      chrome.storage.local.get(['pendingFormData', 'pendingFormSave'], resolve);
+    });
+
+    if (stored.pendingFormSave && stored.pendingFormData) {
+      // Attendre que l'utilisateur soit authentifié
+      const checkAuth = setInterval(async () => {
+        if (isAuthenticated && currentPin) {
+          clearInterval(checkAuth);
+          await handlePendingFormData(stored.pendingFormData);
+          // Nettoyer les données en attente
+          await chrome.storage.local.remove(['pendingFormData', 'pendingFormSave']);
+        }
+      }, 500);
+
+      // Timeout après 30 secondes
+      setTimeout(() => {
+        clearInterval(checkAuth);
+      }, 30000);
+    }
+  } catch (error) {
+    console.error('Erreur lors de la vérification des données de formulaire:', error);
+  }
+}
+
+/**
+ * Gère la sauvegarde des données de formulaire en attente
+ */
+async function handlePendingFormData(formData) {
+  try {
+    const domain = formData.domain || 'Sites Web';
+    const url = formData.url || '';
+    
+    // Créer une catégorie basée sur le domaine si elle n'existe pas
+    let categoryPath = domain;
+    
+    // Vérifier si la catégorie existe
+    const allCategories = await loadCategoriesFromFile();
+    if (!allCategories.includes(categoryPath)) {
+      // Créer la catégorie
+      allCategories.push(categoryPath);
+      categories = allCategories;
+      await saveCategoriesToFile();
+    }
+
+    // Utiliser l'URL complète comme nom de secret
+    // Encoder l'URL pour qu'elle soit valide comme chemin dans Vault
+    // Utiliser encodeURIComponent mais remplacer les slashes par des underscores pour éviter les sous-dossiers
+    let secretName = url || 'compte';
+    if (secretName !== 'compte') {
+      // Encoder l'URL mais garder les caractères de base URL valides
+      // Remplacer les slashes par des underscores pour éviter les problèmes de chemin
+      secretName = secretName.replace(/\//g, '_').replace(/[^a-zA-Z0-9\-._~:?#[\]@!$&'()*+,;=]/g, '_');
+      // Limiter la longueur pour éviter les problèmes
+      if (secretName.length > 200) {
+        secretName = secretName.substring(0, 200);
+      }
+    }
+    
+    // Vérifier si le secret existe déjà
+    const secretPath = `${categoryPath}/${secretName}`;
+    let existingSecret = null;
+    try {
+      const res = await readSecret(secretPath);
+      existingSecret = (res && res.data && res.data.data) || {};
+    } catch (e) {
+      // Le secret n'existe pas, c'est normal
+    }
+
+    // Préparer les données à sauvegarder
+    const fieldsToSave = [];
+    
+    if (formData.fields.username) {
+      fieldsToSave.push({ key: 'Nom d\'utilisateur', value: formData.fields.username });
+    }
+    if (formData.fields.email) {
+      fieldsToSave.push({ key: 'Email', value: formData.fields.email });
+    }
+    if (formData.fields.password) {
+      fieldsToSave.push({ key: 'Mot de passe', value: formData.fields.password });
+    }
+    if (formData.fields.url) {
+      fieldsToSave.push({ key: 'URL', value: formData.fields.url });
+    }
+    
+    // Ajouter les autres champs
+    if (formData.fields.other) {
+      for (const [key, value] of Object.entries(formData.fields.other)) {
+        if (value) {
+          fieldsToSave.push({ key: key, value: value });
+        }
+      }
+    }
+
+    if (fieldsToSave.length === 0) {
+      showToast('Aucune donnée à sauvegarder', 'error');
+      return;
+    }
+
+    // Vérifier si les données sont différentes
+    let isDifferent = false;
+    if (existingSecret && Array.isArray(existingSecret)) {
+      // Comparer avec les données existantes
+      const existingFields = {};
+      existingSecret.forEach(item => {
+        if (item && item.key && item.value) {
+          existingFields[item.key] = item.value;
+        }
+      });
+
+      // Déchiffrer et comparer chaque champ
+      for (const field of fieldsToSave) {
+        const existingValue = existingFields[field.key];
+        if (existingValue) {
+          try {
+            const context = `vault-secret-${categoryPath}-${secretName}-${field.key}`;
+            const decryptedValue = await window.cryptoSystem.decryptSecret(existingValue, currentPin, context);
+            if (decryptedValue !== field.value) {
+              // La valeur est différente
+              isDifferent = true;
+              break;
+            }
+          } catch (e) {
+            // Erreur de déchiffrement, considérer comme différent
+            isDifferent = true;
+            break;
+          }
+        } else {
+          // Le champ n'existe pas dans les données existantes
+          isDifferent = true;
+          break;
+        }
+      }
+      
+      // Vérifier aussi s'il y a des champs existants qui ne sont pas dans les nouvelles données
+      if (!isDifferent) {
+        const newFieldKeys = new Set(fieldsToSave.map(f => f.key));
+        const hasExtraFields = existingSecret.some(item => 
+          item && item.key && !newFieldKeys.has(item.key)
+        );
+        if (hasExtraFields) {
+          // Il y a des champs supplémentaires dans les données existantes, on considère comme différent
+          // pour permettre la mise à jour
+          isDifferent = true;
+        }
+      }
+    } else {
+      // Pas de secret existant, donc c'est différent
+      isDifferent = true;
+    }
+
+    if (!isDifferent && existingSecret) {
+      showToast('Les informations sont déjà sauvegardées et identiques', 'info');
+      return;
+    }
+
+    // Chiffrer et sauvegarder
+    const keyValueList = [];
+    for (const field of fieldsToSave) {
+      try {
+        const context = `vault-secret-${categoryPath}-${secretName}-${field.key}`;
+        const encryptedValue = await window.cryptoSystem.encryptSecret(field.value, currentPin, context);
+        keyValueList.push({
+          key: field.key,
+          value: encryptedValue
+        });
+      } catch (error) {
+        console.error(`Erreur lors du chiffrement de ${field.key}:`, error);
+        showToast(`Erreur lors du chiffrement de ${field.key}`, 'error');
+        return;
+      }
+    }
+
+    // Lire le secret de la catégorie existant
+    let categoryData = {};
+    try {
+      const res = await readSecret(categoryPath);
+      categoryData = (res && res.data && res.data.data) || {};
+    } catch (e) {
+      // La catégorie n'existe pas encore
+    }
+
+    // Mettre à jour avec le nouveau secret
+    categoryData[secretName] = keyValueList;
+
+    // Sauvegarder
+    await writeSecret(categoryPath, categoryData);
+    
+    showToast(`✅ Informations sauvegardées dans "${categoryPath}/${secretName}"`, 'success');
+    
+    // Mettre à jour la catégorie courante
+    currentCategoryPath = categoryPath;
+    
+    // Mettre à jour les selects de catégorie
+    if (categorySelect && categorySelect.value !== categoryPath) {
+      categorySelect.value = categoryPath;
+    }
+    if (detailCategorySelect && detailCategorySelect.value !== categoryPath) {
+      detailCategorySelect.value = categoryPath;
+    }
+    
+    // Recharger les catégories et les secrets si on est sur la bonne vue
+    if (currentCategoryPath === categoryPath) {
+      await loadCardsFromVault(categoryPath);
+    }
+    
+    // Ouvrir automatiquement la page de détails du secret nouvellement créé
+    // Créer un objet secret pour navigateToDetail
+    const savedSecret = {
+      key: secretName,
+      path: categoryPath,
+      category: categoryPath,
+      value: '', // La valeur sera chargée par loadSecretDetail
+      type: 'Clés'
+    };
+    
+    // Naviguer vers la vue de détail
+    await navigateToDetail(savedSecret, -1);
+  } catch (error) {
+    console.error('Erreur lors de la sauvegarde des données de formulaire:', error);
+    showToast(`Erreur lors de la sauvegarde: ${error.message}`, 'error');
+  }
 }
 
 // Lancer l'initialisation au chargement

@@ -10,6 +10,7 @@
 * **Gestion KV v2 :** Lister, lire, créer, mettre à jour et supprimer des secrets.
 * **Authentification Flexible :** Supporte l'authentification via Token manuel ou Google OIDC.
 * **Renouvellement Automatique des Tokens :** Les tokens Vault renouvelables sont automatiquement prolongés jusqu'à leur durée maximale (Max Lease TTL) lors de chaque connexion, évitant les ré-authentifications fréquentes.
+* **Sauvegarde Automatique des Formulaires :** Détecte automatiquement les formulaires remplis sur n'importe quelle page web et propose de sauvegarder les informations (nom d'utilisateur, email, mot de passe) dans Vault. Compare avec les données existantes pour éviter les doublons.
 * **Interface Moderne :** Une UI vibrante avec des animations fluides, inspirée de Magic Patterns.
 * **Synchronisation et Backup :** Synchronisation automatique de la Master Key via Chrome ou backup manuel via fichier.
 
@@ -79,9 +80,18 @@ L'extension gère automatiquement le renouvellement des tokens Vault pour évite
 
 * **Fonctionnement :** Lors de chaque connexion avec le PIN, l'extension vérifie si le token est renouvelable et proche de l'expiration (moins de 24 heures restantes ou TTL initial de 1 heure).
 * **Renouvellement :** Si les conditions sont remplies, le token est automatiquement renouvelé jusqu'à sa durée maximale (Max Lease TTL, généralement 99 jours pour OIDC).
-* **Transparence :** Le processus est automatique et transparent. Vous verrez une notification toast indiquant le renouvellement et le nouveau TTL.
-* **Logs :** Les détails du renouvellement sont disponibles dans la console du navigateur (F12) pour le débogage.
+* **Transparence :** Le processus est automatique et transparent. Les détails sont disponibles dans la console du navigateur (F12).
 * **Avantage :** Avec un Max Lease TTL de 99 jours, vous n'aurez besoin de vous ré-authentifier qu'une fois tous les 99 jours au lieu de toutes les heures.
+
+### Sauvegarde Automatique des Formulaires
+L'extension détecte automatiquement les formulaires remplis sur toutes les pages web et propose de sauvegarder les informations :
+
+* **Détection Automatique :** Lorsqu'un formulaire est soumis, l'extension détecte automatiquement les champs remplis (nom d'utilisateur, email, mot de passe, etc.).
+* **Proposition de Sauvegarde :** Une notification élégante apparaît en haut à droite de la page pour proposer la sauvegarde.
+* **Comparaison Intelligente :** L'extension compare les données avec celles déjà enregistrées dans Vault pour éviter les doublons. Si les informations sont identiques, aucune sauvegarde n'est proposée.
+* **Organisation Automatique :** Les secrets sont automatiquement organisés par domaine dans des catégories dédiées.
+* **Chiffrement :** Toutes les données sont chiffrées avant d'être sauvegardées dans Vault, garantissant la sécurité même si le serveur est compromis.
+* **Workflow :** Après avoir cliqué sur "Sauvegarder", ouvrez l'extension et authentifiez-vous avec votre PIN. Les données seront automatiquement sauvegardées dans la catégorie correspondant au domaine du site.
 
 ### Interface Utilisateur (Design)
 L'interface a été modernisée (v1.1.2) pour offrir une meilleure expérience :
